@@ -17,7 +17,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"desmojim.fr/formol/formolcli/create"
+	"github.com/desmo999r/formolcli/create"
 )
 
 // backupsessionCmd represents the backupsession command
@@ -31,7 +31,9 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		create.CreateBackupSession()
+		name, _ := cmd.Flags().GetString("name")
+		namespace, _ := cmd.Flags().GetString("namespace")
+		create.CreateBackupSession(name, namespace)
 	},
 }
 
