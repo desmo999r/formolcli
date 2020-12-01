@@ -27,10 +27,12 @@ WORKDIR /dist
 RUN cp /build/formolcli .
 
 # Build a small image
-FROM scratch
+FROM arm32v7/alpine:3.12
 
-COPY --from=builder /dist/formolcli /
+RUN apk add --no-cache restic
+COPY bin/restic /usr/local/bin
+COPY --from=builder /dist/formolcli /usr/local/bin
 
 # Command to run
-ENTRYPOINT ["/formolcli"]
+ENTRYPOINT ["/usr/local/bin/formolcli"]
 CMD ["--help"]

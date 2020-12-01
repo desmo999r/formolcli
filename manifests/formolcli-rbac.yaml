@@ -14,6 +14,17 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
+  name: backup-listener
+  labels:
+    app: backup-listener
+rules:
+  - apiGroups: ["formol.desmojim.fr"]
+    resources: ["backupsessions", "backupconfigurations"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
   name: backupsession-creator
   labels:
     app: backupsession-creator
@@ -35,5 +46,21 @@ roleRef:
 subjects:
   - name: backupsession-creator
     namespace: backup
+    kind: ServiceAccount
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-listener
+  labels:
+    app: backup-listener
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-listener
+subjects:
+  - name: default
+    namespace: default
     kind: ServiceAccount
 

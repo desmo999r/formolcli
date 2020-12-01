@@ -39,7 +39,6 @@ func CreateBackupSession(name string, namespace string) {
 		Spec: formolv1alpha1.BackupSessionSpec{
 			Ref: formolv1alpha1.Ref{
 				Name: name,
-				Namespace: namespace,
 			},
 		},
 		Status: formolv1alpha1.BackupSessionStatus{},
