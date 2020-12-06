@@ -1,11 +1,14 @@
 package controllers
 
 import (
+	"time"
+	"encoding/json"
 	"context"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"os"
 	"path/filepath"
 
@@ -22,14 +25,17 @@ var (
 )
 
 func init() {
+	log := zap.New(zap.UseDevMode(true)).WithName("init")
+
 	namespace := os.Getenv("POD_NAMESPACE")
 	if namespace == "" {
-		panic("No POD_NAMESPACE env var")
+		return
 	}
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config, err = clientcmd.BuildConfigFromFlags("", filepath.Join(os.Getenv("HOME"), ".kube", "config",))
 		if err != nil {
+			log.Error(err, "unable to get config")
 			panic(err.Error())
 		}
 	}
@@ -45,6 +51,7 @@ func init() {
 
 	pod, err := clientset.CoreV1().Pods(namespace).Get(hostname, metav1.GetOptions{})
 	if err != nil {
+		log.Error(err, "unable to get pod")
 		panic("unable to get pod")
 	}
 
@@ -81,6 +88,10 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 
 	log.V(1).Info("backupSession.Namespace", "namespace", backupSession.Namespace)
 	log.V(1).Info("backupSession.Spec.Ref.Name", "name", backupSession.Spec.Ref.Name)
+	if backupSession.Status.BackupSessionState != "" {
+		log.V(0).Info("State is not null. Skipping", "state", backupSession.Status.BackupSessionState)
+		return ctrl.Result{}, nil
+	}
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: backupSession.Namespace,
@@ -93,14 +104,48 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 	log.V(1).Info("Found BackupConfiguration", "BackupConfiguration", backupConf)
 
 	// Found the BackupConfiguration.
+	if backupConf.Spec.Target.Name != deploymentName {
+		log.V(0).Info("Not for us", "target", backupConf.Spec.Target.Name, "us", deploymentName)
+		return ctrl.Result{}, nil
+	}
+	log.V(0).Info("before", "backupsession", backupSession)
+	backupSession.Status.BackupSessionState = formolv1alpha1.Running
+	if err := r.Client.Status().Update(ctx, backupSession); err != nil {
+		log.Error(err, "unable to update status", "backupsession", backupSession)
+		return ctrl.Result{}, err
+	}
+	c := make(chan []byte)
+
+	go func(){
+		for msg := range c {
+			var dat map[string]interface{}
+			if err := json.Unmarshal(msg, &dat); err != nil {
+				log.Error(err, "unable to unmarshal json", "msg", msg)
+				continue
+			}
+			log.V(1).Info("message on stdout", "stdout", dat)
+			if message_type, ok := dat["message_type"]; ok && message_type == "summary"{
+				backupSession.Status.SnapshotId = dat["snapshot_id"].(string)
+				backupSession.Status.Duration = &metav1.Duration{Duration : time.Duration(dat["total_duration"].(float64) * 1000) * time.Millisecond}
+			}
+		}
+	}()
+	result := formolv1alpha1.Failure
+	defer func() {
+		close(c)
+		backupSession.Status.BackupSessionState = result
+		if err := r.Status().Update(ctx, backupSession); err != nil {
+			log.Error(err, "unable to update status")
+		}
+	}()
 	switch backupConf.Spec.Target.Kind {
 	case "Deployment":
-		if err := backup.BackupDeployment("", backupConf.Spec.Paths); err != nil {
+		backupSession.Status.StartTime = &metav1.Time {Time: time.Now()}
+		if err := backup.BackupDeployment("", backupConf.Spec.Paths, c); err != nil {
 			log.Error(err, "unable to backup deployment")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, err
 		}
-	default:
-		return ctrl.Result{}, nil
+		result = formolv1alpha1.Success
 	}
 	return ctrl.Result{}, nil
 }

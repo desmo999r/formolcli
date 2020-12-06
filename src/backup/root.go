@@ -2,9 +2,12 @@ package backup
 
 import (
 	"strings"
+	"bufio"
 	"os"
 	"os/exec"
-	"log"
+	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 )
 
 var (
@@ -13,31 +16,47 @@ var (
 	aws_access_key_id string
 	aws_secret_access_key string
 	resticExec = "/usr/local/bin/restic"
+	logger logr.Logger
 )
 
 func init() {
-	if repository = os.Getenv("RESTIC_REPOSITORY"); repository == "" {
-		log.Fatal("RESTIC_REPOSITORY not set")
-	}
-	if passwordFile = os.Getenv("RESTIC_PASSWORD"); passwordFile == "" {
-		log.Fatal("RESTIC_PASSWORD not set")
-	}
-	if aws_access_key_id = os.Getenv("AWS_ACCESS_KEY_ID"); aws_access_key_id == "" {
-		log.Fatal("AWS_ACCESS_KEY_ID not set")
-	}
-	if aws_secret_access_key = os.Getenv("AWS_SECRET_ACCESS_KEY"); aws_secret_access_key == "" {
-		log.Fatal("AWS_SECRET_ACCESS_KEY not set")
-	}
+	zapLog, _ := zap.NewDevelopment()
+	logger = zapr.NewLogger(zapLog)
+	repository = os.Getenv("RESTIC_REPOSITORY")
+	passwordFile = os.Getenv("RESTIC_PASSWORD")
+	aws_access_key_id = os.Getenv("AWS_ACCESS_KEY_ID")
+	aws_secret_access_key = os.Getenv("AWS_SECRET_ACCESS_KEY")
 }
 
 func checkRepo(repo string) error {
+	log := logger.WithName("backup-checkrepo")
 	cmd := exec.Command(resticExec, "check", "-r", repo)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	err := cmd.Run()
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		log.Error(err, "unable to pipe stderr")
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		log.Error(err, "cannot start repo check")
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		log.V(0).Info("initializing new repo", "repo", repo)
 		cmd = exec.Command(resticExec, "init", "-r", repo)
-		err = cmd.Run()
+		if err := cmd.Start(); err != nil {
+			log.Error(err, "cannot start repo init")
+			return err
+		}
+		go func(){
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				log.V(0).Info("and error happened", "stderr", scanner.Text())
+			}
+		}()
+		if err := cmd.Wait(); err != nil {
+			log.Error(err, "something went wrong during repo init")
+			return err
+		}
 	}
 	return err
 }
@@ -46,16 +65,47 @@ func BackupVolume(path string) error {
 	return nil
 }
 
-func BackupDeployment(prefix string, paths []string) error {
+func BackupDeployment(prefix string, paths []string, c chan []byte) (error) {
+	log := logger.WithName("backup-deployment")
 	newrepo := repository
 	if prefix != "" {
 		newrepo = repository + "/" + prefix
 	}
 	if err := checkRepo(newrepo); err != nil {
-		log.Fatal("unable to setup newrepo", "newrepo", newrepo)
+		log.Error(err, "unable to setup newrepo", "newrepo", newrepo)
 		return err
 	}
-	cmd := exec.Command(resticExec, "backup", "-r", newrepo, strings.Join(paths, " "))
+	cmd := exec.Command(resticExec, "backup", "--json", "-r", newrepo, strings.Join(paths, " "))
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Error(err, "unable to pipe stderr")
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Error(err, "unable to pipe stdout")
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		log.Error(err, "cannot start backup")
+		return err
+	}
+	go func(){
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			log.V(0).Info("and error happened", "stderr", scanner.Text())
+		}
+	}()
+	go func(c chan []byte){
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			c <- scanner.Bytes()
+		}
+	}(c)
+	if err := cmd.Wait(); err != nil {
+		log.Error(err, "something went wrong during the backup")
+		return err
+	}
 
-	return cmd.Run()
+	return nil
 }

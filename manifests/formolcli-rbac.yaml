@@ -21,6 +21,9 @@ rules:
   - apiGroups: ["formol.desmojim.fr"]
     resources: ["backupsessions", "backupconfigurations"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["formol.desmojim.fr"]
+    resources: ["backupsessions/status"]
+    verbs: ["update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
