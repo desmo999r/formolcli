@@ -1,4 +1,4 @@
-package create
+package backupsession
 
 import (
 	"strings"
@@ -16,12 +16,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrl "sigs.k8s.io/controller-runtime"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
+	"github.com/go-logr/logr"
 )
 
-func CreateBackupSession(name string, namespace string) {
-	log := zap.New(zap.UseDevMode(true)).WithName("CreateBackupSession")
-	ctrl.SetLogger(log)
-	log.V(0).Info("CreateBackupSession called")
+var (
+	config *rest.Config
+	scheme *runtime.Scheme
+	cl client.Client
+	logger logr.Logger
+)
+
+func init() {
+	logger = zap.New(zap.UseDevMode(true))
+	log := logger.WithName("InitBackupSession")
+	ctrl.SetLogger(logger)
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config, err = clientcmd.BuildConfigFromFlags("", filepath.Join(os.Getenv("HOME"), ".kube", "config",))
@@ -30,15 +38,23 @@ func CreateBackupSession(name string, namespace string) {
 			os.Exit(1)
 		}
 	}
-	scheme := runtime.NewScheme()
+	scheme = runtime.NewScheme()
 	_ = formolv1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
-	cl, err := client.New(config, client.Options{Scheme: scheme})
+	cl, err = client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		log.Error(err, "unable to get client")
 		os.Exit(1)
 	}
+}
 
+func DeleteBackupSession(name string, namespace string) error {
+	return nil
+}
+
+func CreateBackupSession(name string, namespace string) {
+	log := logger.WithName("CreateBackupSession")
+	log.V(0).Info("CreateBackupSession called")
 	backupConfList := &formolv1alpha1.BackupConfigurationList{}
 	if err := cl.List(context.TODO(), backupConfList, client.InNamespace(namespace)); err != nil {
 		log.Error(err, "unable to get backupconf")

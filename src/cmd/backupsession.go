@@ -17,11 +17,11 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/desmo999r/formolcli/create"
+	"github.com/desmo999r/formolcli/pkg/backupsession"
 )
 
 // backupsessionCmd represents the backupsession command
-var backupsessionCmd = &cobra.Command{
+var createBackupsessionCmd = &cobra.Command{
 	Use:   "backupsession",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
@@ -33,12 +33,29 @@ to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		name, _ := cmd.Flags().GetString("name")
 		namespace, _ := cmd.Flags().GetString("namespace")
-		create.CreateBackupSession(name, namespace)
+		backupsession.CreateBackupSession(name, namespace)
+	},
+}
+
+var deleteBackupsessionCmd = &cobra.Command{
+	Use:   "backupsession",
+	Short: "A brief description of your command",
+	Long: `A longer description that spans multiple lines and likely contains examples
+and usage of using your command. For example:
+
+Cobra is a CLI library for Go that empowers applications.
+This application is a tool to generate the needed files
+to quickly create a Cobra application.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		name, _ := cmd.Flags().GetString("name")
+		namespace, _ := cmd.Flags().GetString("namespace")
+		backupsession.DeleteBackupSession(name, namespace)
 	},
 }
 
 func init() {
-	createCmd.AddCommand(backupsessionCmd)
+	createCmd.AddCommand(createBackupsessionCmd)
+	deleteCmd.AddCommand(deleteBackupsessionCmd)
 
 	// Here you will define your flags and configuration settings.
 
@@ -49,8 +66,12 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// backupsessionCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	backupsessionCmd.Flags().String("namespace", "", "The referenced BackupSessionConfiguration namespace")
-	backupsessionCmd.Flags().String("name", "", "The referenced BackupSessionConfiguration name")
-	backupsessionCmd.MarkFlagRequired("namespace")
-	backupsessionCmd.MarkFlagRequired("name")
+	createBackupsessionCmd.Flags().String("namespace", "", "The referenced BackupSessionConfiguration namespace")
+	createBackupsessionCmd.Flags().String("name", "", "The referenced BackupSessionConfiguration name")
+	createBackupsessionCmd.MarkFlagRequired("namespace")
+	createBackupsessionCmd.MarkFlagRequired("name")
+	deleteBackupsessionCmd.Flags().String("namespace", "", "The referenced BackupSessionConfiguration namespace")
+	deleteBackupsessionCmd.Flags().String("name", "", "The referenced BackupSessionConfiguration name")
+	deleteBackupsessionCmd.MarkFlagRequired("namespace")
+	deleteBackupsessionCmd.MarkFlagRequired("name")
 }

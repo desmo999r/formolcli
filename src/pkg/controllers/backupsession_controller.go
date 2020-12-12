@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"github.com/desmo999r/formolcli/backup"
+	"github.com/desmo999r/formolcli/pkg/backup"
 )
 
 var (
@@ -49,14 +49,14 @@ func init() {
 		panic("unable to get hostname")
 	}
 
-	pod, err := clientset.CoreV1().Pods(namespace).Get(hostname, metav1.GetOptions{})
+	pod, err := clientset.CoreV1().Pods(namespace).Get(context.Background(), hostname, metav1.GetOptions{})
 	if err != nil {
 		log.Error(err, "unable to get pod")
 		panic("unable to get pod")
 	}
 
 	podOwner := metav1.GetControllerOf(pod)
-	replicasetList, err := clientset.AppsV1().ReplicaSets(namespace).List(metav1.ListOptions{
+	replicasetList, err := clientset.AppsV1().ReplicaSets(namespace).List(context.Background(), metav1.ListOptions{
 		FieldSelector: "metadata.name=" + string(podOwner.Name),
 	})
 	if err != nil {

@@ -1,4 +1,4 @@
-package create
+package server
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"github.com/desmo999r/formolcli/controllers"
+	"github.com/desmo999r/formolcli/pkg/controllers"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 )
 
@@ -39,6 +39,7 @@ func Server(){
 		Port: 9443,
 		LeaderElection: enableLeaderElection,
 		LeaderElectionID: "12345.desmojim.fr",
+		Namespace: os.Getenv("POD_NAMESPACE"),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")

@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/desmo999r/formolcli/backup"
+	"github.com/desmo999r/formolcli/pkg/backup"
 )
 
 // pvcCmd represents the pvc command
