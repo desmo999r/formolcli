@@ -1,10 +1,11 @@
-FROM arm32v7/golang:alpine AS builder
+FROM golang:alpine AS builder
 
 # Set necessary environmet variables needed for our image
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
     GOOS=linux \
-    GOARCH=arm
+    GOARCH=arm \
+    GOARM=7
 
 # Move to working directory /build
 WORKDIR /build
@@ -15,7 +16,7 @@ COPY src/go.sum .
 RUN go mod download
 
 # Copy the code into the container
-COPY src/ .
+COPY src .
 
 # Build the application
 RUN go build -o formolcli .
