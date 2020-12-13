@@ -49,6 +49,20 @@ func init() {
 }
 
 func DeleteBackupSession(name string, namespace string) error {
+	log := logger.WithName("CreateBackupSession")
+	log.V(0).Info("CreateBackupSession called")
+	backupSession := &formolv1alpha1.BackupSession{}
+	if err := cl.Get(context.TODO(), client.ObjectKey{
+		Namespace: namespace,
+		Name: name,
+	}, backupSession); err != nil {
+		log.Error(err, "unable to get backupsession", "backupsession", name)
+		return err
+	}
+	if err := cl.Delete(context.TODO(), backupSession); err != nil {
+		log.Error(err, "unable to delete backupsession", "backupsession", name)
+		return err
+	}
 	return nil
 }
 

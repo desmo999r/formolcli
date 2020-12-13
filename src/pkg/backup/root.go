@@ -109,3 +109,17 @@ func BackupDeployment(prefix string, paths []string, c chan []byte) (error) {
 
 	return nil
 }
+
+func DeleteSnapshot(prefix string, snapshotId string) error {
+	log := logger.WithValues("delete-snapshot", snapshotId)
+	newrepo := repository
+	if prefix != "" {
+		newrepo = repository + "/" + prefix
+	}
+	cmd := exec.Command(resticExec, "forget", "-r", newrepo, snapshotId)
+	if err := cmd.Run(); err != nil {
+		log.Error(err, "unable to delete the snapshot")
+		return err
+	}
+	return nil
+}
