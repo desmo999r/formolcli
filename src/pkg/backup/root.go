@@ -15,7 +15,7 @@ var (
 	passwordFile string
 	aws_access_key_id string
 	aws_secret_access_key string
-	resticExec = "/usr/local/bin/restic"
+	resticExec = "/usr/bin/restic"
 	logger logr.Logger
 )
 

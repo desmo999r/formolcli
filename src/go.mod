@@ -3,7 +3,7 @@ module github.com/desmo999r/formolcli
 go 1.14
 
 require (
-	github.com/desmo999r/formol v0.6.2-0.20201212121852-aa511e03435a
+	github.com/desmo999r/formol v0.6.2-0.20201228110830-3aaf127e5835
 	github.com/go-logr/logr v0.1.0
 	github.com/go-logr/zapr v0.1.0
 	github.com/mitchellh/go-homedir v1.1.0

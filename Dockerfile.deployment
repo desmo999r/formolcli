@@ -31,7 +31,7 @@ RUN cp /build/formolcli .
 FROM arm32v7/alpine:3.12
 
 RUN apk add --no-cache restic
-COPY bin/restic /usr/local/bin
+#COPY bin/restic /usr/local/bin
 COPY --from=builder /dist/formolcli /usr/local/bin
 
 # Command to run
