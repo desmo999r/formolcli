@@ -1,18 +1,18 @@
 package server
 
 import (
-	"os"
 	"flag"
+	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
+	"github.com/desmo999r/formolcli/pkg/controllers"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"github.com/desmo999r/formolcli/pkg/controllers"
-	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("server")
 )
 
@@ -21,7 +21,7 @@ func init() {
 	_ = formolv1alpha1.AddToScheme(scheme)
 }
 
-func Server(){
+func Server() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8082", "The address the metric endpoint binds to.")
@@ -34,12 +34,12 @@ func Server(){
 
 	config, err := ctrl.GetConfig()
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme: scheme,
+		Scheme:             scheme,
 		MetricsBindAddress: metricsAddr,
-		Port: 9443,
-		LeaderElection: enableLeaderElection,
-		LeaderElectionID: "12345.desmojim.fr",
-		Namespace: os.Getenv("POD_NAMESPACE"),
+		Port:               9443,
+		LeaderElection:     enableLeaderElection,
+		LeaderElectionID:   "12345.desmojim.fr",
+		Namespace:          os.Getenv("POD_NAMESPACE"),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
@@ -48,7 +48,7 @@ func Server(){
 
 	if err = (&controllers.BackupSessionReconciler{
 		Client: mgr.GetClient(),
-		Log: ctrl.Log.WithName("controllers").WithName("BackupSession"),
+		Log:    ctrl.Log.WithName("controllers").WithName("BackupSession"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupSession")

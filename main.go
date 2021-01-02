@@ -15,7 +15,7 @@ limitations under the License.
 */
 package main
 
-import "github.com/desmo999r/formolcli/cmd"
+import "github.com/desmo999r/formolcli/pkg/cmd"
 
 func main() {
 	cmd.Execute()

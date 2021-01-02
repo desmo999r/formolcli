@@ -1,5 +1,4 @@
-/*
-Copyright © 2020 NAME HERE <EMAIL ADDRESS>
+/* Copyright © 2020 NAME HERE <EMAIL ADDRESS>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,15 +15,15 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
+	"os"
 
-	"github.com/desmo999r/formolcli/pkg/server"
+	"github.com/desmo999r/formolcli/pkg/backup"
 	"github.com/spf13/cobra"
 )
 
-// serverCmd represents the server command
-var serverCmd = &cobra.Command{
-	Use:   "server",
+// snapshotCmd represents the snapshot command
+var snapshotCmd = &cobra.Command{
+	Use:   "snapshot",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -33,21 +32,25 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("server called")
-		server.Server()
+		snapshot, _ := cmd.Flags().GetString("snapshot")
+		if err := backup.DeleteSnapshot(snapshot); err != nil {
+			os.Exit(1)
+		}
 	},
 }
 
 func init() {
-	createCmd.AddCommand(serverCmd)
+	deleteCmd.AddCommand(snapshotCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// serverCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// snapshotCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// serverCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// snapshotCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	snapshotCmd.Flags().String("snapshot", "", "The snapshot to delete")
+	snapshotCmd.MarkFlagRequired("snapshot")
 }

@@ -1,2 +1,2 @@
-src/go.sum
-src/formolcli
+go.sum
+bin

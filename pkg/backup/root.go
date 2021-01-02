@@ -1,22 +1,29 @@
 package backup
 
 import (
-	"strings"
 	"bufio"
-	"os"
-	"os/exec"
-	"go.uber.org/zap"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
+	"github.com/desmo999r/formolcli/pkg/backupsession"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"time"
 )
 
 var (
-	repository string
-	passwordFile string
-	aws_access_key_id string
+	repository            string
+	passwordFile          string
+	aws_access_key_id     string
 	aws_secret_access_key string
-	resticExec = "/usr/bin/restic"
-	logger logr.Logger
+	resticExec            = "/usr/bin/restic"
+	pg_dumpExec           = "/usr/bin/pg_dump"
+	logger                logr.Logger
 )
 
 func init() {
@@ -47,7 +54,7 @@ func checkRepo(repo string) error {
 			log.Error(err, "cannot start repo init")
 			return err
 		}
-		go func(){
+		go func() {
 			scanner := bufio.NewScanner(stderr)
 			for scanner.Scan() {
 				log.V(0).Info("and error happened", "stderr", scanner.Text())
@@ -61,63 +68,77 @@ func checkRepo(repo string) error {
 	return err
 }
 
-func BackupVolume(path string) error {
-	return nil
+func GetBackupResults(output []byte) (snapshotId string, duration time.Duration) {
+	log := logger.WithName("backup-getbackupresults")
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	var dat map[string]interface{}
+	for scanner.Scan() {
+		if err := json.Unmarshal(scanner.Bytes(), &dat); err != nil {
+			log.Error(err, "unable to unmarshal json", "msg", string(scanner.Bytes()))
+			continue
+		}
+		log.V(1).Info("message on stdout", "stdout", dat)
+		if message_type, ok := dat["message_type"]; ok && message_type == "summary" {
+			snapshotId = dat["snapshot_id"].(string)
+			duration = time.Duration(dat["total_duration"].(float64)*1000) * time.Millisecond
+		}
+	}
+	return
 }
 
-func BackupDeployment(prefix string, paths []string, c chan []byte) (error) {
-	log := logger.WithName("backup-deployment")
-	newrepo := repository
-	if prefix != "" {
-		newrepo = repository + "/" + prefix
-	}
-	if err := checkRepo(newrepo); err != nil {
-		log.Error(err, "unable to setup newrepo", "newrepo", newrepo)
-		return err
-	}
-	cmd := exec.Command(resticExec, "backup", "--json", "-r", newrepo, strings.Join(paths, " "))
-	stderr, err := cmd.StderrPipe()
+func BackupVolume(tag string, paths []string) error {
+	log := logger.WithName("backup-volume")
+	state := formolv1alpha1.Success
+	output, err := BackupPaths(tag, paths)
+	var snapshotId string
+	var duration time.Duration
 	if err != nil {
-		log.Error(err, "unable to pipe stderr")
+		log.Error(err, "unable to backup volume", "output", string(output))
+		state = formolv1alpha1.Failure
+	} else {
+		snapshotId, duration = GetBackupResults(output)
+	}
+	backupsession.BackupSessionUpdateStatus(state, snapshotId, duration)
+	return err
+}
+
+func BackupPostgres(file string, hostname string, database string, username string, password string) error {
+	log := logger.WithName("backup-postgres")
+	pgpass := []byte(fmt.Sprintf("%s:*:%s:%s:%s", hostname, database, username, password))
+	if err := ioutil.WriteFile("/output/.pgpass", pgpass, 0600); err != nil {
+		log.Error(err, "unable to write password to /output/.pgpass")
 		return err
 	}
-	stdout, err := cmd.StdoutPipe()
+	defer os.Remove("/output/.pgpass")
+	cmd := exec.Command(pg_dumpExec, "--clean", "--create", "--file", file, "--host", hostname, "--dbname", database, "--username", username, "--no-password")
+	cmd.Env = append(os.Environ(), "PGPASSFILE=/output/.pgpass")
+	output, err := cmd.CombinedOutput()
+	log.V(1).Info("postgres backup output", "output", string(output))
 	if err != nil {
-		log.Error(err, "unable to pipe stdout")
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		log.Error(err, "cannot start backup")
-		return err
-	}
-	go func(){
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			log.V(0).Info("and error happened", "stderr", scanner.Text())
-		}
-	}()
-	go func(c chan []byte){
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			c <- scanner.Bytes()
-		}
-	}(c)
-	if err := cmd.Wait(); err != nil {
 		log.Error(err, "something went wrong during the backup")
 		return err
 	}
-
 	return nil
 }
 
-func DeleteSnapshot(prefix string, snapshotId string) error {
-	log := logger.WithValues("delete-snapshot", snapshotId)
-	newrepo := repository
-	if prefix != "" {
-		newrepo = repository + "/" + prefix
+func BackupPaths(tag string, paths []string) ([]byte, error) {
+	log := logger.WithName("backup-deployment")
+	if err := checkRepo(repository); err != nil {
+		log.Error(err, "unable to setup newrepo", "newrepo", repository)
+		return []byte{}, err
 	}
-	cmd := exec.Command(resticExec, "forget", "-r", newrepo, snapshotId)
-	if err := cmd.Run(); err != nil {
+	cmd := exec.Command(resticExec, append([]string{"backup", "--json", "--tag", tag, "-r", repository}, paths...)...)
+	output, err := cmd.CombinedOutput()
+	return output, err
+}
+
+func DeleteSnapshot(snapshot string) error {
+	log := logger.WithValues("delete-snapshot", snapshot)
+	cmd := exec.Command(resticExec, "forget", "-r", repository, "--prune", snapshot)
+	log.V(0).Info("deleting snapshot", "snapshot", snapshot)
+	output, err := cmd.CombinedOutput()
+	log.V(1).Info("delete snapshot output", "output", string(output))
+	if err != nil {
 		log.Error(err, "unable to delete the snapshot")
 		return err
 	}

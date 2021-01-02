@@ -30,7 +30,7 @@ RUN cp /build/formolcli .
 # Build a small image
 FROM arm32v7/alpine:3.12
 
-RUN apk add --no-cache restic
+RUN apk add --no-cache restic postgresql-client
 #COPY bin/restic /usr/local/bin
 COPY --from=builder /dist/formolcli /usr/local/bin
 

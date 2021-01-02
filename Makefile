@@ -1,10 +1,22 @@
-IMG-deployment ?= desmo999r/formolcli:latest
-docker-build-deployment:
-	podman build --disable-compression --format=docker --file Dockerfile.deployment -t ${IMG-deployment}
+.PHONY: all formolcli docker docker-build docker-push
 
-docker-push-deployment:
-	podman push ${IMG-deployment}
+IMG ?= desmo999r/formolcli:latest
 
-deployment: docker-build-deployment docker-push-deployment
+formolcli: fmt vet
+	GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -o bin/formolcli main.go
 
-all: deployment
+fmt:
+	go fmt ./...
+
+vet:
+	go vet ./...
+
+docker-build:
+	podman build --disable-compression --format=docker -t ${IMG} .
+
+docker-push:
+	podman push ${IMG}
+
+docker: formolcli docker-build docker-push
+
+all: docker

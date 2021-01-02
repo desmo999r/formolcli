@@ -16,8 +16,8 @@ limitations under the License.
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"github.com/desmo999r/formolcli/pkg/backupsession"
+	"github.com/spf13/cobra"
 )
 
 // backupsessionCmd represents the backupsession command
@@ -37,25 +37,8 @@ to quickly create a Cobra application.`,
 	},
 }
 
-var deleteBackupsessionCmd = &cobra.Command{
-	Use:   "backupsession",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		name, _ := cmd.Flags().GetString("name")
-		namespace, _ := cmd.Flags().GetString("namespace")
-		backupsession.DeleteBackupSession(name, namespace)
-	},
-}
-
 func init() {
 	createCmd.AddCommand(createBackupsessionCmd)
-	deleteCmd.AddCommand(deleteBackupsessionCmd)
 
 	// Here you will define your flags and configuration settings.
 
@@ -70,8 +53,4 @@ func init() {
 	createBackupsessionCmd.Flags().String("name", "", "The referenced BackupSessionConfiguration name")
 	createBackupsessionCmd.MarkFlagRequired("namespace")
 	createBackupsessionCmd.MarkFlagRequired("name")
-	deleteBackupsessionCmd.Flags().String("namespace", "", "The referenced BackupSessionConfiguration namespace")
-	deleteBackupsessionCmd.Flags().String("name", "", "The referenced BackupSessionConfiguration name")
-	deleteBackupsessionCmd.MarkFlagRequired("namespace")
-	deleteBackupsessionCmd.MarkFlagRequired("name")
 }
