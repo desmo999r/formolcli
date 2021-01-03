@@ -36,31 +36,16 @@ func init() {
 }
 
 func checkRepo(repo string) error {
-	log := logger.WithName("backup-checkrepo")
+	log := logger.WithValues("backup-checkrepo", repo)
 	cmd := exec.Command(resticExec, "check", "-r", repo)
-	stderr, err := cmd.StderrPipe()
+	output, err := cmd.CombinedOutput()
+	log.V(1).Info("restic check output", "output", string(output))
 	if err != nil {
-		log.Error(err, "unable to pipe stderr")
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		log.Error(err, "cannot start repo check")
-		return err
-	}
-	if err := cmd.Wait(); err != nil {
 		log.V(0).Info("initializing new repo", "repo", repo)
 		cmd = exec.Command(resticExec, "init", "-r", repo)
-		if err := cmd.Start(); err != nil {
-			log.Error(err, "cannot start repo init")
-			return err
-		}
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				log.V(0).Info("and error happened", "stderr", scanner.Text())
-			}
-		}()
-		if err := cmd.Wait(); err != nil {
+		output, err = cmd.CombinedOutput()
+		log.V(1).Info("restic init repo", "output", string(output))
+		if err != nil {
 			log.Error(err, "something went wrong during repo init")
 			return err
 		}
