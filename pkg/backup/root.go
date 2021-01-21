@@ -37,7 +37,11 @@ func init() {
 
 func checkRepo(repo string) error {
 	log := logger.WithValues("backup-checkrepo", repo)
-	cmd := exec.Command(resticExec, "check", "-r", repo)
+	cmd := exec.Command(resticExec, "unlock", "-r", repo)
+	if err := cmd.Run(); err != nil {
+		log.Error(err, "unable to unlock repo", "repo", repo)
+	}
+	cmd = exec.Command(resticExec, "check", "-r", repo)
 	output, err := cmd.CombinedOutput()
 	log.V(1).Info("restic check output", "output", string(output))
 	if err != nil {
