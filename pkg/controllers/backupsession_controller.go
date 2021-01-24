@@ -15,6 +15,7 @@ import (
 
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/desmo999r/formolcli/pkg/backup"
+	formolcliutils "github.com/desmo999r/formolcli/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -95,72 +96,50 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Found the BackupConfiguration.
-	//	backupDeployment := func(target formolv1alpha1.Target) error {
-	//		//backupSession.Status.BackupSessionState = formolv1alpha1.Running
-	//		//if err := r.Client.Status().Update(ctx, backupSession); err != nil {
-	//		//	log.Error(err, "unable to update status", "backupsession", backupSession)
-	//		//	return err
-	//		//}
-	//		// Preparing for backup
-	//		c := make(chan []byte)
-	//
-	//		go func() {
-	//			for msg := range c {
-	//				var dat map[string]interface{}
-	//				if err := json.Unmarshal(msg, &dat); err != nil {
-	//					log.Error(err, "unable to unmarshal json", "msg", msg)
-	//					continue
-	//				}
-	//				log.V(1).Info("message on stdout", "stdout", dat)
-	//				//if message_type, ok := dat["message_type"]; ok && message_type == "summary" {
-	//				//	backupSession.Status.SnapshotId = dat["snapshot_id"].(string)
-	//				//	backupSession.Status.Duration = &metav1.Duration{Duration: time.Duration(dat["total_duration"].(float64)*1000) * time.Millisecond}
-	//				//}
-	//			}
-	//		}()
-	//		//result := formolv1alpha1.Failure
-	//		defer func() {
-	//			close(c)
-	//			//backupSession.Status.BackupSessionState = result
-	//			//if err := r.Status().Update(ctx, backupSession); err != nil {
-	//			//	log.Error(err, "unable to update status")
-	//			//}
-	//		}()
-	//		// do the backup
-	//		//backupSession.Status.StartTime = &metav1.Time{Time: time.Now()}
-	//		if err := backup.BackupPaths(backupSession.Name, target.Paths, c); err != nil {
-	//			log.Error(err, "unable to backup deployment")
-	//			return err
-	//		}
-	//		//result = formolv1alpha1.Success
-	//
-	//		return nil
-	//	}
-
 	for _, target := range backupConf.Spec.Targets {
 		switch target.Kind {
 		case "Deployment":
 			if target.Name == deploymentName {
 				for i, status := range backupSession.Status.Targets {
-					if status.Name == target.Name && status.BackupState == formolv1alpha1.New {
+					if status.Name == target.Name {
 						log.V(0).Info("It's for us!", "target", target)
-						result := formolv1alpha1.Success
-						status.StartTime = &metav1.Time{Time: time.Now()}
-						output, err := backup.BackupPaths(backupSession.Name, target.Paths)
-						if err != nil {
-							log.Error(err, "unable to backup deployment", "output", string(output))
-							result = formolv1alpha1.Failure
-						} else {
-							snapshotId, duration := backup.GetBackupResults(output)
-							backupSession.Status.Targets[i].SnapshotId = snapshotId
-							backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
-						}
-						backupSession.Status.Targets[i].BackupState = result
-						log.V(1).Info("current backupSession status", "status", backupSession.Status)
-						if err := r.Status().Update(ctx, backupSession); err != nil {
-							log.Error(err, "unable to update backupsession status")
-							return ctrl.Result{}, err
+						switch status.BackupState {
+						case formolv1alpha1.New:
+							// TODO: Run beforeBackup
+							log.V(0).Info("New session, run the beforeBackup hooks if any")
+							result := formolv1alpha1.Running
+							if err := formolcliutils.RunBeforeBackup(target); err != nil {
+								result = formolv1alpha1.Failure
+							}
+							backupSession.Status.Targets[i].BackupState = result
+							log.V(1).Info("current backupSession status", "status", backupSession.Status)
+							if err := r.Status().Update(ctx, backupSession); err != nil {
+								log.Error(err, "unable to update backupsession status")
+								return ctrl.Result{}, err
+							}
+						case formolv1alpha1.Running:
+							log.V(0).Info("Running session. Do the backup")
+							result := formolv1alpha1.Success
+							status.StartTime = &metav1.Time{Time: time.Now()}
+							output, err := backup.BackupPaths(backupSession.Name, target.Paths)
+							if err != nil {
+								log.Error(err, "unable to backup deployment", "output", string(output))
+								result = formolv1alpha1.Failure
+							} else {
+								snapshotId, duration := backup.GetBackupResults(output)
+								backupSession.Status.Targets[i].SnapshotId = snapshotId
+								backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
+							}
+							backupSession.Status.Targets[i].BackupState = result
+							log.V(1).Info("current backupSession status", "status", backupSession.Status)
+							if err := r.Status().Update(ctx, backupSession); err != nil {
+								log.Error(err, "unable to update backupsession status")
+								return ctrl.Result{}, err
+							}
+						case formolv1alpha1.Success, formolv1alpha1.Failure:
+							// I decided not to flag the backup as a failure if the AfterBackup command fail. But maybe I'm wrong
+							log.V(0).Info("Backup is over, run the afterBackup hooks if any")
+							formolcliutils.RunAfterBackup(target)
 						}
 					}
 				}
