@@ -49,17 +49,20 @@ func init() {
 	}
 }
 
-func BackupSessionUpdateStatus(state formolv1alpha1.BackupState, snapshotId string, duration time.Duration) error {
+func BackupSessionUpdateStatus(state formolv1alpha1.SessionState, snapshotId string, duration time.Duration) error {
 	log := logger.WithName("BackupSessionUpdateStatus")
 	targetName := os.Getenv("TARGET_NAME")
 	backupSession := &formolv1alpha1.BackupSession{}
-	cl.Get(context.Background(), client.ObjectKey{
+	if err := cl.Get(context.Background(), client.ObjectKey{
 		Namespace: os.Getenv("BACKUPSESSION_NAMESPACE"),
 		Name:      os.Getenv("BACKUPSESSION_NAME"),
-	}, backupSession)
+	}, backupSession); err != nil {
+		log.Error(err, "unable to get backupsession", "BACKUPSESSION_NAME", os.Getenv("BACKUPSESSION_NAME"), "BACKUPSESSION_NAMESPACE", os.Getenv("BACKUPSESSION_NAMESPACE"))
+		return err
+	}
 	for i, target := range backupSession.Status.Targets {
 		if target.Name == targetName {
-			backupSession.Status.Targets[i].BackupState = state
+			backupSession.Status.Targets[i].SessionState = state
 			backupSession.Status.Targets[i].SnapshotId = snapshotId
 			backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
 		}
