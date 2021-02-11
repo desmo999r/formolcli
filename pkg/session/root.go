@@ -1,4 +1,4 @@
-package backupsession
+package session
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func init() {
 	}
 }
 
-func BackupSessionUpdateStatus(state formolv1alpha1.SessionState, snapshotId string, duration time.Duration) error {
+func BackupSessionUpdateTargetStatus(state formolv1alpha1.SessionState, snapshotId string) error {
 	log := logger.WithName("BackupSessionUpdateStatus")
 	targetName := os.Getenv("TARGET_NAME")
 	backupSession := &formolv1alpha1.BackupSession{}
@@ -64,12 +64,37 @@ func BackupSessionUpdateStatus(state formolv1alpha1.SessionState, snapshotId str
 		if target.Name == targetName {
 			backupSession.Status.Targets[i].SessionState = state
 			backupSession.Status.Targets[i].SnapshotId = snapshotId
-			backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
+			backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(backupSession.Status.Targets[i].StartTime.Time)}
 		}
 	}
 
 	if err := cl.Status().Update(context.Background(), backupSession); err != nil {
 		log.Error(err, "unable to update status", "backupsession", backupSession)
+		return err
+	}
+	return nil
+}
+
+func RestoreSessionUpdateTargetStatus(state formolv1alpha1.SessionState) error {
+	log := logger.WithName("RestoreSessionUpdateStatus")
+	targetName := os.Getenv("TARGET_NAME")
+	restoreSession := &formolv1alpha1.RestoreSession{}
+	if err := cl.Get(context.Background(), client.ObjectKey{
+		Namespace: os.Getenv("RESTORESESSION_NAMESPACE"),
+		Name:      os.Getenv("RESTORESESSION_NAME"),
+	}, restoreSession); err != nil {
+		log.Error(err, "unable to get backupsession", "RESTORESESSION_NAME", os.Getenv("RESTORESESSION_NAME"), "RESTORESESSION_NAMESPACE", os.Getenv("RESTORESESSION_NAMESPACE"))
+		return err
+	}
+	for i, target := range restoreSession.Status.Targets {
+		if target.Name == targetName {
+			restoreSession.Status.Targets[i].SessionState = state
+			restoreSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(restoreSession.Status.Targets[i].StartTime.Time)}
+		}
+	}
+
+	if err := cl.Status().Update(context.Background(), restoreSession); err != nil {
+		log.Error(err, "unable to update restoresession status", "restoresession", restoreSession)
 		return err
 	}
 	return nil

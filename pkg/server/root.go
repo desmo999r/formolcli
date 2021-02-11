@@ -39,7 +39,7 @@ func Server() {
 		Port:               9443,
 		LeaderElection:     enableLeaderElection,
 		LeaderElectionID:   "12345.desmojim.fr",
-		Namespace:          os.Getenv("POD_NAMESPACE"),
+		//Namespace:          os.Getenv("POD_NAMESPACE"),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
@@ -52,6 +52,15 @@ func Server() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupSession")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.RestoreSessionReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("RestoreSession"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RestoreSession")
 		os.Exit(1)
 	}
 
