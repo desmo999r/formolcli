@@ -46,7 +46,7 @@ func BackupPostgres(file string, hostname string, database string, username stri
 		return err
 	}
 	defer os.Remove("/output/.pgpass")
-	cmd := exec.Command(pg_dumpExec, "--clean", "--create", "--file", file, "--host", hostname, "--dbname", database, "--username", username, "--no-password")
+	cmd := exec.Command(pg_dumpExec, "--format=custom", "--clean", "--create", "--file", file, "--host", hostname, "--dbname", database, "--username", username, "--no-password")
 	cmd.Env = append(os.Environ(), "PGPASSFILE=/output/.pgpass")
 	output, err := cmd.CombinedOutput()
 	log.V(1).Info("postgres backup output", "output", string(output))

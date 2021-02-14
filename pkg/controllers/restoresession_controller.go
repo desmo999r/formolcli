@@ -50,9 +50,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	deploymentName := os.Getenv("POD_DEPLOYMENT")
-	// we go reverse order compared to the backup session
-	for i := len(r.BackupConf.Spec.Targets) - 1; i >= 0; i-- {
-		target := r.BackupConf.Spec.Targets[i]
+	for _, target := range r.BackupConf.Spec.Targets {
 		switch target.Kind {
 		case "Deployment":
 			if target.Name == deploymentName {
@@ -69,7 +67,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 							r.RestoreSession.Status.Targets[i].SessionState = result
 							if err := r.Status().Update(ctx, r.RestoreSession); err != nil {
 								log.Error(err, " unable to update restoresession status")
-								return ctrl.Result{}, err
+								return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 							}
 						case formolv1alpha1.Running:
 							log.V(0).Info("Running session. Do the restore")
@@ -97,7 +95,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 							log.V(1).Info("current restoresession status", "status", result)
 							if err := r.Status().Update(ctx, r.RestoreSession); err != nil {
 								log.Error(err, "unable to update restoresession status")
-								return ctrl.Result{}, err
+								return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 							}
 
 						case formolv1alpha1.Failure, formolv1alpha1.Success:
