@@ -14,6 +14,7 @@ import (
 )
 
 var (
+	//psqlExec = "/usr/bin/psql"
 	pg_restoreExec = "/usr/bin/pg_restore"
 	logger         logr.Logger
 )
@@ -32,6 +33,7 @@ func RestoreVolume(snapshotId string) error {
 		log.Error(err, "unable to restore volume", "output", string(output))
 		state = formolv1alpha1.Failure
 	}
+	log.V(1).Info("restic restore output", "output", string(output))
 	session.RestoreSessionUpdateTargetStatus(state)
 	return err
 }
@@ -44,7 +46,8 @@ func RestorePostgres(file string, hostname string, database string, username str
 		return err
 	}
 	defer os.Remove("/output/.pgpass")
-	cmd := exec.Command(pg_restoreExec, "--clean", "--create", "--file", file, "--host", hostname, "--dbname", database, "--username", username, "--no-password")
+	//cmd := exec.Command(psqlExec, "--file", file, "--host", hostname, "--dbname", database, "--username", username, "--no-password")
+	cmd := exec.Command(pg_restoreExec, "--format=custom", "--clean", "--host", hostname, "--dbname", database, "--username", username, "--no-password", file)
 	cmd.Env = append(os.Environ(), "PGPASSFILE=/output/.pgpass")
 	output, err := cmd.CombinedOutput()
 	log.V(1).Info("postgres restore output", "output", string(output))
