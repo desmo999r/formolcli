@@ -92,7 +92,9 @@ func RestorePaths(repository string, snapshotId string) ([]byte, error) {
 		return []byte{}, err
 	}
 	cmd := exec.Command(resticExec, "restore", "-r", repository, snapshotId, "--target", "/")
-	return cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+	log.V(1).Info("restic restore output", "output", string(output))
+	return output, err
 }
 
 func DeleteSnapshot(snapshot string) error {
