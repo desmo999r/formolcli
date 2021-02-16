@@ -17,3 +17,5 @@ require (
 	k8s.io/client-go v0.18.6
 	sigs.k8s.io/controller-runtime v0.6.4
 )
+
+replace github.com/desmo999r/formol => /home/jandre/devel/golang/formol
