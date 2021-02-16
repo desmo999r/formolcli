@@ -51,7 +51,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 				for i, status := range backupSession.Status.Targets {
 					if status.Name == target.Name {
 						log.V(0).Info("It's for us!", "target", target)
-						switch status.BackupState {
+						switch status.SessionState {
 						case formolv1alpha1.New:
 							// TODO: Run beforeBackup
 							log.V(0).Info("New session, run the beforeBackup hooks if any")
@@ -59,7 +59,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 							if err := formolcliutils.RunBeforeBackup(target); err != nil {
 								result = formolv1alpha1.Failure
 							}
-							backupSession.Status.Targets[i].BackupState = result
+							backupSession.Status.Targets[i].SessionState = result
 							log.V(1).Info("current backupSession status", "status", backupSession.Status)
 							if err := r.Status().Update(ctx, backupSession); err != nil {
 								log.Error(err, "unable to update backupsession status")
@@ -78,7 +78,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 								backupSession.Status.Targets[i].SnapshotId = snapshotId
 								backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
 							}
-							backupSession.Status.Targets[i].BackupState = result
+							backupSession.Status.Targets[i].SessionState = result
 							log.V(1).Info("current backupSession status", "status", backupSession.Status)
 							if err := r.Status().Update(ctx, backupSession); err != nil {
 								log.Error(err, "unable to update backupsession status")
@@ -100,10 +100,9 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 func (r *BackupSessionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&formolv1alpha1.BackupSession{}).
-		//WithEventFilter(predicate.GenerationChangedPredicate{}). // Don't reconcile when status gets updated
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool { return false },
 			DeleteFunc: func(e event.DeleteEvent) bool { return false },
-		}). // Don't reconcile when status gets updated
+		}).
 		Complete(r)
 }
