@@ -5,11 +5,9 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"os"
-	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"time"
 
@@ -17,58 +15,7 @@ import (
 	"github.com/desmo999r/formolcli/pkg/backup"
 	formolcliutils "github.com/desmo999r/formolcli/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
-
-var (
-	deploymentName = ""
-)
-
-func init() {
-	log := zap.New(zap.UseDevMode(true)).WithName("init")
-
-	namespace := os.Getenv("POD_NAMESPACE")
-	if namespace == "" {
-		return
-	}
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		config, err = clientcmd.BuildConfigFromFlags("", filepath.Join(os.Getenv("HOME"), ".kube", "config"))
-		if err != nil {
-			log.Error(err, "unable to get config")
-			panic(err.Error())
-		}
-	}
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic("unable to get clientset")
-	}
-
-	hostname := os.Getenv("POD_NAME")
-	if hostname == "" {
-		panic("unable to get hostname")
-	}
-
-	pod, err := clientset.CoreV1().Pods(namespace).Get(context.Background(), hostname, metav1.GetOptions{})
-	if err != nil {
-		log.Error(err, "unable to get pod")
-		panic("unable to get pod")
-	}
-
-	podOwner := metav1.GetControllerOf(pod)
-	replicasetList, err := clientset.AppsV1().ReplicaSets(namespace).List(context.Background(), metav1.ListOptions{
-		FieldSelector: "metadata.name=" + string(podOwner.Name),
-	})
-	if err != nil {
-		panic("unable to get replicaset" + err.Error())
-	}
-	for _, replicaset := range replicasetList.Items {
-		replicasetOwner := metav1.GetControllerOf(&replicaset)
-		deploymentName = replicasetOwner.Name
-	}
-}
 
 // BackupSessionReconciler reconciles a BackupSession object
 type BackupSessionReconciler struct {
@@ -96,6 +43,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	deploymentName := os.Getenv("POD_DEPLOYMENT")
 	for _, target := range backupConf.Spec.Targets {
 		switch target.Kind {
 		case "Deployment":
