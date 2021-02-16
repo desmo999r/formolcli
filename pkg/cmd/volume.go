@@ -19,13 +19,36 @@ import (
 	"os"
 
 	"github.com/desmo999r/formolcli/pkg/backup"
+	"github.com/desmo999r/formolcli/pkg/restore"
 	"github.com/spf13/cobra"
 )
 
-// pvcCmd represents the pvc command
+var volumeRestoreCmd = &cobra.Command{
+	Use:   "restore",
+	Short: "restore a volume",
+	Run: func(cmd *cobra.Command, args []string) {
+		snapshotId, _ := cmd.Flags().GetString("snapshot-id")
+		if err := restore.RestoreVolume(snapshotId); err != nil {
+			os.Exit(1)
+		}
+	},
+}
+
+var volumeBackupCmd = &cobra.Command{
+	Use:   "backup",
+	Short: "backup a volume",
+	Run: func(cmd *cobra.Command, args []string) {
+		paths, _ := cmd.Flags().GetStringSlice("path")
+		tag, _ := cmd.Flags().GetString("tag")
+		if err := backup.BackupVolume(tag, paths); err != nil {
+			os.Exit(1)
+		}
+	},
+}
+
 var volumeCmd = &cobra.Command{
 	Use:   "volume",
-	Short: "A brief description of your command",
+	Short: "volume actions",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
 
@@ -42,18 +65,13 @@ to quickly create a Cobra application.`,
 }
 
 func init() {
-	backupCmd.AddCommand(volumeCmd)
+	rootCmd.AddCommand(volumeCmd)
+	volumeCmd.AddCommand(volumeBackupCmd)
+	volumeCmd.AddCommand(volumeRestoreCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// pvcCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// pvcCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	volumeCmd.Flags().StringSlice("path", nil, "Path to the data to backup")
-	volumeCmd.Flags().String("tag", "", "Tag associated to the backup")
-	volumeCmd.MarkFlagRequired("path")
+	volumeBackupCmd.Flags().StringSlice("path", nil, "Path to the data to backup")
+	volumeBackupCmd.Flags().String("tag", "", "Tag associated to the backup")
+	volumeBackupCmd.MarkFlagRequired("path")
+	volumeRestoreCmd.Flags().String("snapshot-id", "", "snapshot id associated to the backup")
+	volumeRestoreCmd.MarkFlagRequired("snapshot-id")
 }
