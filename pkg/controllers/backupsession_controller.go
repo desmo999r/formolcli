@@ -12,7 +12,7 @@ import (
 	"time"
 
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
-	"github.com/desmo999r/formolcli/pkg/backup"
+	"github.com/desmo999r/formolcli/pkg/restic"
 	formolcliutils "github.com/desmo999r/formolcli/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -25,6 +25,7 @@ type BackupSessionReconciler struct {
 }
 
 func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+	time.Sleep(2 * time.Second)
 	ctx := context.Background()
 	log := r.Log.WithValues("backupsession", req.NamespacedName)
 
@@ -69,14 +70,14 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 							log.V(0).Info("Running session. Do the backup")
 							result := formolv1alpha1.Success
 							status.StartTime = &metav1.Time{Time: time.Now()}
-							output, err := backup.BackupPaths(backupSession.Name, target.Paths)
+							output, err := restic.BackupPaths(backupSession.Name, target.Paths)
 							if err != nil {
 								log.Error(err, "unable to backup deployment", "output", string(output))
 								result = formolv1alpha1.Failure
 							} else {
-								snapshotId, duration := backup.GetBackupResults(output)
+								snapshotId := restic.GetBackupResults(output)
 								backupSession.Status.Targets[i].SnapshotId = snapshotId
-								backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: duration}
+								backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(backupSession.Status.Targets[i].StartTime.Time)}
 							}
 							backupSession.Status.Targets[i].SessionState = result
 							log.V(1).Info("current backupSession status", "status", backupSession.Status)
