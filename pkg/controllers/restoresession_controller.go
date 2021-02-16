@@ -28,7 +28,7 @@ type RestoreSessionReconciler struct {
 }
 
 func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	time.Sleep(2 * time.Second)
+	time.Sleep(300 * time.Millisecond)
 	ctx := context.Background()
 	log := r.Log.WithValues("restoresession", req.NamespacedName)
 	r.RestoreSession = &formolv1alpha1.RestoreSession{}
@@ -83,6 +83,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 								return ctrl.Result{}, err
 							}
 							url := fmt.Sprintf("s3:http://%s/%s/%s-%s", repo.Spec.Backend.S3.Server, repo.Spec.Backend.S3.Bucket, strings.ToUpper(r.BackupConf.Namespace), strings.ToLower(r.BackupConf.Name))
+							log.V(0).Info("restoring", "url", url, "snapshot", r.BackupSession.Status.Targets[i].SnapshotId)
 							output, err := restic.RestorePaths(url, r.BackupSession.Status.Targets[i].SnapshotId)
 							if err != nil {
 								log.Error(err, "unable to restore deployment", "output", string(output))
