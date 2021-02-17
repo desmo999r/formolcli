@@ -85,7 +85,7 @@ func BackupPaths(tag string, paths []string) ([]byte, error) {
 	return output, err
 }
 
-func RestorePaths(repository string, snapshotId string) ([]byte, error) {
+func RestorePaths(snapshotId string) ([]byte, error) {
 	log := logger.WithName("restore-deployment")
 	if err := checkRepo(repository); err != nil {
 		log.Error(err, "unable to setup repo", "repo", repository)
