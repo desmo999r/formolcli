@@ -26,7 +26,9 @@ func init() {
 
 func RestoreVolume(snapshotId string) error {
 	log := logger.WithName("restore-volume")
-	session.RestoreSessionUpdateTargetStatus(formolv1alpha1.Running)
+	if err := session.RestoreSessionUpdateTargetStatus(formolv1alpha1.Running); err != nil {
+		return err
+	}
 	state := formolv1alpha1.Success
 	output, err := restic.RestorePaths(snapshotId)
 	if err != nil {

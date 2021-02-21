@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,8 +89,13 @@ func RestoreSessionUpdateTargetStatus(state formolv1alpha1.SessionState) error {
 	}
 	for i, target := range restoreSession.Status.Targets {
 		if target.Name == targetName {
+			if target.SessionState == formolv1alpha1.Success {
+				return errors.New("the restore has already been done. Skipping")
+			}
 			restoreSession.Status.Targets[i].SessionState = state
-			restoreSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(restoreSession.Status.Targets[i].StartTime.Time)}
+			if state == formolv1alpha1.Success || state == formolv1alpha1.Failure {
+				restoreSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(restoreSession.Status.Targets[i].StartTime.Time)}
+			}
 		}
 	}
 
