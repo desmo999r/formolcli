@@ -61,12 +61,11 @@ func BackupSessionUpdateTargetStatus(state formolv1alpha1.SessionState, snapshot
 		log.Error(err, "unable to get backupsession", "BACKUPSESSION_NAME", os.Getenv("BACKUPSESSION_NAME"), "BACKUPSESSION_NAMESPACE", os.Getenv("BACKUPSESSION_NAMESPACE"))
 		return err
 	}
-	for i, target := range backupSession.Status.Targets {
-		if target.Name == targetName {
-			backupSession.Status.Targets[i].SessionState = state
-			backupSession.Status.Targets[i].SnapshotId = snapshotId
-			backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(backupSession.Status.Targets[i].StartTime.Time)}
-		}
+	target := &(backupSession.Status.Targets[len(backupSession.Status.Targets)-1])
+	if target.Name == targetName {
+		target.SessionState = state
+		target.SnapshotId = snapshotId
+		target.Duration = &metav1.Duration{Duration: time.Now().Sub(target.StartTime.Time)}
 	}
 
 	if err := cl.Status().Update(context.Background(), backupSession); err != nil {
@@ -128,9 +127,7 @@ func CreateBackupSession(name string, namespace string) {
 			Namespace: namespace,
 		},
 		Spec: formolv1alpha1.BackupSessionSpec{
-			Ref: formolv1alpha1.Ref{
-				Name: name,
-			},
+			Ref: name,
 		},
 	}
 	log.V(1).Info("create backupsession", "backupSession", backupSession)

@@ -19,9 +19,7 @@ func init() {
 	logger = zapr.NewLogger(zapLog)
 }
 
-func runHook(hooks []formolv1alpha1.Hook, label string) error {
-	log := logger.WithName(label)
-	log.V(0).Info("Run commands")
+func RunHooks(hooks []formolv1alpha1.Hook) error {
 	for _, hook := range hooks {
 		err := RunChroot(hook.Cmd, hook.Args...)
 		if err != nil {
@@ -77,12 +75,4 @@ func RunChroot(runCmd string, args ...string) error {
 		return err
 	}
 	return nil
-}
-
-func RunBeforeBackup(target formolv1alpha1.Target) error {
-	return runHook(target.BeforeBackup, "runBeforeBackup")
-}
-
-func RunAfterBackup(target formolv1alpha1.Target) error {
-	return runHook(target.AfterBackup, "runAfterBackup")
 }

@@ -38,58 +38,104 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: backupSession.Namespace,
-		Name:      backupSession.Spec.Ref.Name,
+		Name:      backupSession.Spec.Ref,
 	}, backupConf); err != nil {
 		log.Error(err, "unable to get backupConfiguration")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	deploymentName := os.Getenv("POD_DEPLOYMENT")
+	deploymentName := os.Getenv(formolv1alpha1.TARGET_NAME)
 	for _, target := range backupConf.Spec.Targets {
 		switch target.Kind {
-		case "Deployment":
+		case formolv1alpha1.SidecarKind:
 			if target.Name == deploymentName {
-				for i, status := range backupSession.Status.Targets {
-					if status.Name == target.Name {
-						log.V(0).Info("It's for us!", "target", target)
-						switch status.SessionState {
-						case formolv1alpha1.New:
-							// TODO: Run beforeBackup
-							log.V(0).Info("New session, run the beforeBackup hooks if any")
-							result := formolv1alpha1.Running
-							if err := formolcliutils.RunBeforeBackup(target); err != nil {
-								result = formolv1alpha1.Failure
-							}
-							backupSession.Status.Targets[i].SessionState = result
-							log.V(1).Info("current backupSession status", "status", backupSession.Status)
-							if err := r.Status().Update(ctx, backupSession); err != nil {
-								log.Error(err, "unable to update backupsession status")
-								return ctrl.Result{}, err
-							}
-						case formolv1alpha1.Running:
-							log.V(0).Info("Running session. Do the backup")
-							result := formolv1alpha1.Success
-							status.StartTime = &metav1.Time{Time: time.Now()}
-							output, err := restic.BackupPaths(backupSession.Name, target.Paths)
-							if err != nil {
-								log.Error(err, "unable to backup deployment", "output", string(output))
-								result = formolv1alpha1.Failure
-							} else {
-								snapshotId := restic.GetBackupResults(output)
-								backupSession.Status.Targets[i].SnapshotId = snapshotId
-								backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(backupSession.Status.Targets[i].StartTime.Time)}
-							}
-							backupSession.Status.Targets[i].SessionState = result
-							log.V(1).Info("current backupSession status", "status", backupSession.Status)
-							if err := r.Status().Update(ctx, backupSession); err != nil {
-								log.Error(err, "unable to update backupsession status")
-								return ctrl.Result{}, err
-							}
-						case formolv1alpha1.Success, formolv1alpha1.Failure:
-							// I decided not to flag the backup as a failure if the AfterBackup command fail. But maybe I'm wrong
-							log.V(0).Info("Backup is over, run the afterBackup hooks if any")
-							formolcliutils.RunAfterBackup(target)
+				// We are involved in that Backup, let's see if it's our turn
+				status := &(backupSession.Status.Targets[len(backupSession.Status.Targets)-1])
+				if status.Name == deploymentName {
+					log.V(0).Info("It's for us!", "target", target)
+					switch status.SessionState {
+					case formolv1alpha1.New:
+						log.V(0).Info("New session, move to Initializing state")
+						status.SessionState = formolv1alpha1.Init
+						if err := r.Status().Update(ctx, backupSession); err != nil {
+							log.Error(err, "unable to update backupsession status")
+							return ctrl.Result{}, err
 						}
+					case formolv1alpha1.Init:
+						log.V(0).Info("Start to run the backup initializing steps if any")
+						result := formolv1alpha1.Running
+						for _, step := range target.Steps {
+							if step.Finalize != nil && *step.Finalize == false {
+								continue
+							}
+							function := &formolv1alpha1.Function{}
+							if err := r.Get(ctx, client.ObjectKey{
+								Name:      step.Name,
+								Namespace: backupConf.Namespace,
+							}, function); err != nil {
+								log.Error(err, "unable to get function", "function", step.Name)
+								return ctrl.Result{}, err
+							}
+							if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
+								log.Error(err, "unable to run function command", "command", function.Spec.Command)
+								result = formolv1alpha1.Failure
+								break
+							}
+						}
+						status.SessionState = result
+
+						if err := r.Status().Update(ctx, backupSession); err != nil {
+							log.Error(err, "unable to update backupsession status")
+							return ctrl.Result{}, err
+						}
+					case formolv1alpha1.Running:
+						log.V(0).Info("Running session. Do the backup")
+						result := formolv1alpha1.Finalize
+						status.StartTime = &metav1.Time{Time: time.Now()}
+						output, err := restic.BackupPaths(backupSession.Name, target.Paths)
+						if err != nil {
+							log.Error(err, "unable to backup deployment", "output", string(output))
+							result = formolv1alpha1.Failure
+						} else {
+							snapshotId := restic.GetBackupResults(output)
+							status.SnapshotId = snapshotId
+							status.Duration = &metav1.Duration{Duration: time.Now().Sub(status.StartTime.Time)}
+						}
+						status.SessionState = result
+						log.V(1).Info("current backupSession status", "status", backupSession.Status)
+						if err := r.Status().Update(ctx, backupSession); err != nil {
+							log.Error(err, "unable to update backupsession status")
+							return ctrl.Result{}, err
+						}
+					case formolv1alpha1.Finalize:
+						log.V(0).Info("Start to run the backup finalizing steps if any")
+						result := formolv1alpha1.Success
+						for _, step := range target.Steps {
+							if step.Finalize != nil && *step.Finalize == false {
+								function := &formolv1alpha1.Function{}
+								if err := r.Get(ctx, client.ObjectKey{
+									Name:      step.Name,
+									Namespace: backupConf.Namespace,
+								}, function); err != nil {
+									log.Error(err, "unable to get function", "function", step.Name)
+									return ctrl.Result{}, err
+								}
+								if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
+									log.Error(err, "unable to run function command", "command", function.Spec.Command)
+									result = formolv1alpha1.Failure
+									break
+								}
+							}
+						}
+						status.SessionState = result
+
+						if err := r.Status().Update(ctx, backupSession); err != nil {
+							log.Error(err, "unable to update backupsession status")
+							return ctrl.Result{}, err
+						}
+
+					case formolv1alpha1.Success, formolv1alpha1.Failure:
+						log.V(0).Info("Backup is over")
 					}
 				}
 			}
