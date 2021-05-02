@@ -38,7 +38,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: backupSession.Namespace,
-		Name:      backupSession.Spec.Ref,
+		Name:      backupSession.Spec.Ref.Name,
 	}, backupConf); err != nil {
 		log.Error(err, "unable to get backupConfiguration")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -65,7 +65,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 						log.V(0).Info("Start to run the backup initializing steps if any")
 						result := formolv1alpha1.Running
 						for _, step := range target.Steps {
-							if step.Finalize != nil && *step.Finalize == false {
+							if step.Finalize != nil && *step.Finalize == true {
 								continue
 							}
 							function := &formolv1alpha1.Function{}
@@ -111,7 +111,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 						log.V(0).Info("Start to run the backup finalizing steps if any")
 						result := formolv1alpha1.Success
 						for _, step := range target.Steps {
-							if step.Finalize != nil && *step.Finalize == false {
+							if step.Finalize != nil && *step.Finalize == true {
 								function := &formolv1alpha1.Function{}
 								if err := r.Get(ctx, client.ObjectKey{
 									Name:      step.Name,

@@ -6,6 +6,7 @@ import (
 	formolcliutils "github.com/desmo999r/formolcli/pkg/utils"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,15 +35,23 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	backupSession := &formolv1alpha1.BackupSession{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: restoreSession.Namespace,
-		Name:      restoreSession.Spec.Ref,
+		Name:      restoreSession.Spec.BackupSessionRef.Ref.Name,
 	}, backupSession); err != nil {
-		log.Error(err, "unable to get backupsession")
-		return ctrl.Result{}, err
+		if errors.IsNotFound(err) {
+			backupSession = &formolv1alpha1.BackupSession{
+				Spec:   restoreSession.Spec.BackupSessionRef.Spec,
+				Status: restoreSession.Spec.BackupSessionRef.Status,
+			}
+			log.V(1).Info("generated backupsession", "backupsession", backupSession)
+		} else {
+			log.Error(err, "unable to get backupsession", "restoresession", restoreSession.Spec)
+			return ctrl.Result{}, client.IgnoreNotFound(err)
+		}
 	}
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: backupSession.Namespace,
-		Name:      backupSession.Spec.Ref,
+		Namespace: backupSession.Spec.Ref.Namespace,
+		Name:      backupSession.Spec.Ref.Name,
 	}, backupConf); err != nil {
 		log.Error(err, "unable to get backupConfiguration")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -54,7 +63,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 	case formolv1alpha1.SidecarKind:
 		if currentTarget.Name == deploymentName {
 			switch currentTargetStatus.SessionState {
-			case formolv1alpha1.Running:
+			case formolv1alpha1.Finalize:
 				log.V(0).Info("It's for us!")
 				podName := os.Getenv(formolv1alpha1.POD_NAME)
 				podNamespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)

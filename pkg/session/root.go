@@ -5,6 +5,7 @@ import (
 	"errors"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -127,7 +128,10 @@ func CreateBackupSession(name string, namespace string) {
 			Namespace: namespace,
 		},
 		Spec: formolv1alpha1.BackupSessionSpec{
-			Ref: name,
+			Ref: corev1.ObjectReference{
+				Name:      name,
+				Namespace: namespace,
+			},
 		},
 	}
 	log.V(1).Info("create backupsession", "backupSession", backupSession)
