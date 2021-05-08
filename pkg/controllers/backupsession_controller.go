@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
 
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
@@ -24,16 +25,17 @@ type BackupSessionReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+var _ reconcile.Reconciler = &BackupSessionReconciler{}
+
+func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	time.Sleep(2 * time.Second)
-	ctx := context.Background()
 	log := r.Log.WithValues("backupsession", req.NamespacedName)
 
 	// your logic here
 	backupSession := &formolv1alpha1.BackupSession{}
 	if err := r.Get(ctx, req.NamespacedName, backupSession); err != nil {
 		log.Error(err, "unable to get backupsession")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
@@ -41,7 +43,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 		Name:      backupSession.Spec.Ref.Name,
 	}, backupConf); err != nil {
 		log.Error(err, "unable to get backupConfiguration")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
 	deploymentName := os.Getenv(formolv1alpha1.TARGET_NAME)
@@ -59,7 +61,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 						status.SessionState = formolv1alpha1.Init
 						if err := r.Status().Update(ctx, backupSession); err != nil {
 							log.Error(err, "unable to update backupsession status")
-							return ctrl.Result{}, err
+							return reconcile.Result{}, err
 						}
 					case formolv1alpha1.Init:
 						log.V(0).Info("Start to run the backup initializing steps if any")
@@ -74,7 +76,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 								Namespace: backupConf.Namespace,
 							}, function); err != nil {
 								log.Error(err, "unable to get function", "function", step.Name)
-								return ctrl.Result{}, err
+								return reconcile.Result{}, err
 							}
 							if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
 								log.Error(err, "unable to run function command", "command", function.Spec.Command)
@@ -86,7 +88,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 
 						if err := r.Status().Update(ctx, backupSession); err != nil {
 							log.Error(err, "unable to update backupsession status")
-							return ctrl.Result{}, err
+							return reconcile.Result{}, err
 						}
 					case formolv1alpha1.Running:
 						log.V(0).Info("Running session. Do the backup")
@@ -105,7 +107,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 						log.V(1).Info("current backupSession status", "status", backupSession.Status)
 						if err := r.Status().Update(ctx, backupSession); err != nil {
 							log.Error(err, "unable to update backupsession status")
-							return ctrl.Result{}, err
+							return reconcile.Result{}, err
 						}
 					case formolv1alpha1.Finalize:
 						log.V(0).Info("Start to run the backup finalizing steps if any")
@@ -118,7 +120,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 									Namespace: backupConf.Namespace,
 								}, function); err != nil {
 									log.Error(err, "unable to get function", "function", step.Name)
-									return ctrl.Result{}, err
+									return reconcile.Result{}, err
 								}
 								if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
 									log.Error(err, "unable to run function command", "command", function.Spec.Command)
@@ -131,7 +133,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 
 						if err := r.Status().Update(ctx, backupSession); err != nil {
 							log.Error(err, "unable to update backupsession status")
-							return ctrl.Result{}, err
+							return reconcile.Result{}, err
 						}
 
 					case formolv1alpha1.Success, formolv1alpha1.Failure:
@@ -141,7 +143,7 @@ func (r *BackupSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, erro
 			}
 		}
 	}
-	return ctrl.Result{}, nil
+	return reconcile.Result{}, nil
 }
 
 func (r *BackupSessionReconciler) SetupWithManager(mgr ctrl.Manager) error {

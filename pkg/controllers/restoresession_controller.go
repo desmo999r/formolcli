@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"strings"
 	"time"
 )
@@ -23,14 +24,15 @@ type RestoreSessionReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
+var _ reconcile.Reconciler = &RestoreSessionReconciler{}
+
+func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := r.Log.WithValues("restoresession", req.NamespacedName)
 
 	restoreSession := &formolv1alpha1.RestoreSession{}
 	if err := r.Get(ctx, req.NamespacedName, restoreSession); err != nil {
 		log.Error(err, "unable to get restoresession")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 	backupSession := &formolv1alpha1.BackupSession{}
 	if err := r.Get(ctx, client.ObjectKey{
@@ -45,16 +47,16 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 			log.V(1).Info("generated backupsession", "backupsession", backupSession)
 		} else {
 			log.Error(err, "unable to get backupsession", "restoresession", restoreSession.Spec)
-			return ctrl.Result{}, client.IgnoreNotFound(err)
+			return reconcile.Result{}, client.IgnoreNotFound(err)
 		}
 	}
 	backupConf := &formolv1alpha1.BackupConfiguration{}
 	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: backupSession.Spec.Ref.Namespace,
+		Namespace: restoreSession.Namespace, // we use the BackupConfiguration in RestoreSession namespace.
 		Name:      backupSession.Spec.Ref.Name,
 	}, backupConf); err != nil {
 		log.Error(err, "unable to get backupConfiguration")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 	deploymentName := os.Getenv(formolv1alpha1.TARGET_NAME)
 	currentTargetStatus := &(restoreSession.Status.Targets[len(restoreSession.Status.Targets)-1])
@@ -64,7 +66,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		if currentTarget.Name == deploymentName {
 			switch currentTargetStatus.SessionState {
 			case formolv1alpha1.Finalize:
-				log.V(0).Info("It's for us!")
+				log.V(0).Info("It's for us!", "target", currentTarget.Name)
 				podName := os.Getenv(formolv1alpha1.POD_NAME)
 				podNamespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)
 				pod := &corev1.Pod{}
@@ -73,12 +75,12 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 					Name:      podName,
 				}, pod); err != nil {
 					log.Error(err, "unable to get pod", "name", podName, "namespace", podNamespace)
-					return ctrl.Result{}, err
+					return reconcile.Result{}, err
 				}
 				for _, containerStatus := range pod.Status.ContainerStatuses {
 					if !containerStatus.Ready {
 						log.V(0).Info("Not all the containers in the pod are ready. Reschedule", "name", containerStatus.Name)
-						return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+						return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 					}
 				}
 				log.V(0).Info("All the containers in the pod are ready. Time to run the restore steps (in reverse order)")
@@ -86,13 +88,14 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 				result := formolv1alpha1.Success
 				for i := range currentTarget.Steps {
 					step := currentTarget.Steps[len(currentTarget.Steps)-1-i]
+					log.V(1).Info("current step", "step", step.Name)
 					backupFunction := &formolv1alpha1.Function{}
 					if err := r.Get(ctx, client.ObjectKey{
 						Namespace: backupConf.Namespace,
 						Name:      step.Name,
 					}, backupFunction); err != nil {
 						log.Error(err, "unable to get backup function")
-						return ctrl.Result{}, err
+						return reconcile.Result{}, err
 					}
 					// We got the backup function corresponding to the step from the BackupConfiguration
 					// Now let's try to get the restore function is there is one
@@ -117,6 +120,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 								continue
 							}
 						}
+						log.V(1).Info("No associated restore function", "step", step.Name)
 					}
 					if len(restoreFunction.Spec.Command) > 1 {
 						log.V(0).Info("Running the restore function", "name", restoreFunction.Name, "command", restoreFunction.Spec.Command)
@@ -129,8 +133,9 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 						}
 					}
 				}
-				// We are done with the restore of this target. We flag it as success of failure
+				// We are done with the restore of this target. We flag it as success or failure
 				// so that we can move to the next step
+				log.V(0).Info("Finalize is over", "target", currentTarget.Name)
 				currentTargetStatus.SessionState = result
 				if err := r.Status().Update(ctx, restoreSession); err != nil {
 					log.Error(err, "unable to update restoresession")
@@ -139,7 +144,7 @@ func (r *RestoreSessionReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return reconcile.Result{}, nil
 }
 
 func (r *RestoreSessionReconciler) SetupWithManager(mgr ctrl.Manager) error {
