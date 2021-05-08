@@ -15,10 +15,10 @@ vet:
 	go vet ./...
 
 docker-build:
-	podman build --disable-compression --format=docker -t ${IMG} .
+	buildah bud --disable-compression --format=docker -t ${IMG} .
 
 docker-push:
-	podman push ${IMG}
+	buildah push ${IMG}
 
 docker: formolcli docker-build docker-push
 
