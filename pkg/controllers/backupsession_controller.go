@@ -5,6 +5,7 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"os"
+	"regexp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -15,6 +16,7 @@ import (
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/desmo999r/formolcli/pkg/restic"
 	formolcliutils "github.com/desmo999r/formolcli/pkg/utils"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -77,6 +79,72 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req reconcile.R
 							}, function); err != nil {
 								log.Error(err, "unable to get function", "function", step.Name)
 								return reconcile.Result{}, err
+							}
+							// TODO: check the command arguments for $(VAR_NAME) arguments. If some are found, try to expand them from
+							// the Function.Spec EnvFrom and Env in that order
+							pattern := regexp.MustCompile(`^\$\((\w+)\)$`)
+							for i, arg := range function.Spec.Command[1:] {
+								i++
+								if match, _ := regexp.MatchString(`^\$\$`, arg); match {
+									continue
+								}
+								if pattern.MatchString(arg) {
+									arg = pattern.ReplaceAllString(arg, "$1")
+									// TODO: Find arg in EnvFrom key and replace it by the value in Command[i]
+									for _, envFrom := range function.Spec.EnvFrom {
+										if envFrom.SecretRef != nil {
+											secret := &corev1.Secret{}
+											if err := r.Get(ctx, client.ObjectKey{
+												Name:      envFrom.SecretRef.Name,
+												Namespace: backupConf.Namespace,
+											}, secret); err != nil {
+												log.Error(err, "unable to get secret", "secret", envFrom.SecretRef.Name)
+												return reconcile.Result{}, err
+											}
+											if val, ok := secret.Data[arg]; ok {
+												log.V(1).Info("Found EnvFrom value for arg", "arg", arg)
+												function.Spec.Command[i] = string(val)
+											}
+
+										}
+										if envFrom.ConfigMapRef != nil {
+											configMap := &corev1.ConfigMap{}
+											if err := r.Get(ctx, client.ObjectKey{
+												Name:      envFrom.ConfigMapRef.Name,
+												Namespace: backupConf.Namespace,
+											}, configMap); err != nil {
+												log.Error(err, "unable to get configMap", "configMap", envFrom.ConfigMapRef.Name)
+												return reconcile.Result{}, err
+											}
+											if val, ok := configMap.Data[arg]; ok {
+												log.V(1).Info("Found EnvFrom value for arg", "arg", arg)
+												function.Spec.Command[i] = val
+											}
+										}
+									}
+									for _, env := range function.Spec.Env {
+										if env.Name == arg {
+											if env.Value == "" {
+												if env.ValueFrom != nil {
+													if env.ValueFrom.SecretKeyRef != nil {
+														secret := &corev1.Secret{}
+														if err := r.Get(ctx, client.ObjectKey{
+															Name:      env.ValueFrom.SecretKeyRef.Name,
+															Namespace: backupConf.Namespace,
+														}, secret); err != nil {
+															log.Error(err, "unable to get secret", "secret", env.ValueFrom.SecretKeyRef.Name)
+															return reconcile.Result{}, err
+														}
+														log.V(1).Info("Found Env value for arg", "arg", arg)
+														function.Spec.Command[i] = string(secret.Data[env.ValueFrom.SecretKeyRef.Key])
+													}
+												}
+											} else {
+												function.Spec.Command[i] = env.Value
+											}
+										}
+									}
+								}
 							}
 							if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
 								log.Error(err, "unable to run function command", "command", function.Spec.Command)
