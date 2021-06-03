@@ -124,7 +124,7 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req reconcile.
 					}
 					if len(restoreFunction.Spec.Command) > 1 {
 						log.V(0).Info("Running the restore function", "name", restoreFunction.Name, "command", restoreFunction.Spec.Command)
-						if err := formolcliutils.RunChroot(restoreFunction.Spec.Command[0], restoreFunction.Spec.Command[1:]...); err != nil {
+						if err := formolcliutils.RunChroot(currentTarget.ContainerName != "", restoreFunction.Spec.Command[0], restoreFunction.Spec.Command[1:]...); err != nil {
 							log.Error(err, "unable to run function command", "command", restoreFunction.Spec.Command)
 							result = formolv1alpha1.Failure
 							break

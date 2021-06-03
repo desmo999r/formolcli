@@ -146,7 +146,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req reconcile.R
 									}
 								}
 							}
-							if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
+							if err := formolcliutils.RunChroot(target.ContainerName != "", function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
 								log.Error(err, "unable to run function command", "command", function.Spec.Command)
 								result = formolv1alpha1.Failure
 								break
@@ -190,7 +190,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req reconcile.R
 									log.Error(err, "unable to get function", "function", step.Name)
 									return reconcile.Result{}, err
 								}
-								if err := formolcliutils.RunChroot(function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
+								if err := formolcliutils.RunChroot(target.ContainerName != "", function.Spec.Command[0], function.Spec.Command[1:]...); err != nil {
 									log.Error(err, "unable to run function command", "command", function.Spec.Command)
 									result = formolv1alpha1.Failure
 									break
