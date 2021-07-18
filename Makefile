@@ -3,7 +3,7 @@
 IMG ?= desmo999r/formolcli:latest
 
 formolcli: fmt vet
-	GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -o bin/formolcli main.go
+	GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/formolcli main.go
 
 test: fmt vet
 	go test ./... -coverprofile cover.out
