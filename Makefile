@@ -1,25 +1,16 @@
-.PHONY: all formolcli docker docker-build docker-push
+GOARCH ?= arm64
 
-IMG ?= desmo999r/formolcli:latest
-
+.PHONY: formolcli
 formolcli: fmt vet
-	GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/formolcli main.go
+	GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -o bin/formolcli main.go
 
-test: fmt vet
-	go test ./... -coverprofile cover.out
-
+.PHONY: fmt
 fmt:
 	go fmt ./...
 
+.PHONY: vet
 vet:
 	go vet ./...
 
-docker-build:
-	buildah bud --disable-compression --format=docker -t ${IMG} .
-
-docker-push:
-	buildah push ${IMG}
-
-docker: formolcli docker-build docker-push
-
-all: docker
+.PHONY: all
+all: formolcli
