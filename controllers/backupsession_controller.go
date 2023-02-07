@@ -9,7 +9,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 )
@@ -35,8 +34,8 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if len(backupSession.Status.Targets) == 0 {
 		// The main BackupSession controller hasn't assigned a backup task yet
 		// Wait a bit
-		r.Log.V(0).Info("No task has been assigned yet. Wait a bit...")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		r.Log.V(0).Info("No task has been assigned yet. Wait for the next update...")
+		return ctrl.Result{}, nil
 	}
 	//	backupConf := formolv1alpha1.BackupConfiguration{}
 	//	err := r.Get(ctx, client.ObjectKey {
