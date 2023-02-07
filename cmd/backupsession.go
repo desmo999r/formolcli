@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/desmo999r/formolcli/backupsession"
-	"github.com/desmo999r/formolcli/backupsession/server"
+	"github.com/desmo999r/formolcli/controllers"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -30,7 +30,7 @@ var startServerCmd = &cobra.Command{
 	Short: "Start a BackupSession controller",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("starts backupsession controller")
-		server.StartServer()
+		controllers.StartServer()
 	},
 }
 

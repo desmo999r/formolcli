@@ -1,4 +1,4 @@
-GOARCH ?= arm64
+GOARCH ?= amd64
 
 .PHONY: formolcli
 formolcli: fmt vet
