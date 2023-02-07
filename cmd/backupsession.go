@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/desmo999r/formolcli/backupsession"
+	"github.com/desmo999r/formolcli/backupsession/server"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -24,6 +25,15 @@ var createBackupSessionCmd = &cobra.Command{
 	},
 }
 
+var startServerCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start a BackupSession controller",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("starts backupsession controller")
+		server.StartServer()
+	},
+}
+
 // backupsessionCmd represents the backupsession command
 var backupSessionCmd = &cobra.Command{
 	Use:   "backupsession",
@@ -33,6 +43,7 @@ var backupSessionCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(backupSessionCmd)
 	backupSessionCmd.AddCommand(createBackupSessionCmd)
+	backupSessionCmd.AddCommand(startServerCmd)
 	createBackupSessionCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.MarkFlagRequired("namespace")
