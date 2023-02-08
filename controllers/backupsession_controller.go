@@ -17,10 +17,12 @@ type BackupSessionReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
+	context.Context
 }
 
 func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = log.FromContext(ctx)
+	r.Context = ctx
 	r.Log.V(0).Info("Enter Reconcile with req", "req", req)
 
 	backupSession := formolv1alpha1.BackupSession{}
