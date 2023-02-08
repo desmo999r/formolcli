@@ -1,0 +1,8 @@
+# Build a small image
+FROM alpine:3.17
+RUN apk add --no-cache su-exec restic postgresql-client
+COPY ./bin/formolcli /usr/local/bin
+
+# Command to run
+ENTRYPOINT ["/usr/local/bin/formolcli"]
+CMD ["--help"]
