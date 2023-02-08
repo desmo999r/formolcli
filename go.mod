@@ -70,4 +70,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/desmo999r/formol => ../formol
+replace github.com/desmo999r/formol => ./formol
