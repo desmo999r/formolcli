@@ -17,7 +17,7 @@ vet:
 
 .PHONY: docker-build
 docker-build: formolcli
-	buildah bud --disable-compression --format=docker --platform $(GOOS)/$(GOARCH) --manifest $(IMG) Dockerfile.$(GOARCH)
+	buildah bud --tag $(IMG) Dockerfile.$(GOARCH)
 
 .PHONY: docker-push
 docker-push: docker-build
