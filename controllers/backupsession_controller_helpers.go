@@ -117,12 +117,12 @@ func (r *BackupSessionReconciler) getFuncVars(function formolv1alpha1.Function, 
 
 func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target formolv1alpha1.Target) error {
 	namespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)
-	r.Log.V(0).Info("start to run the backup initializing steps it any")
+	r.Log.V(0).Info("start to run the backup steps it any")
 	// For every container listed in the target, run the initialization steps
 	for _, container := range target.Containers {
 		// Runs the steps one after the other
 		for _, step := range container.Steps {
-			if step.Finalize != nil && *step.Finalize == true && initializeSteps {
+			if (initializeSteps == true && step.Finalize != nil && *step.Finalize == true) || (initializeSteps == false && (step.Finalize == nil || step.Finalize != nil && *step.Finalize == false)) {
 				continue
 			}
 			function := formolv1alpha1.Function{}
@@ -133,6 +133,7 @@ func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target fo
 				r.Log.Error(err, "unable to get Function", "Function", step.Name)
 				return err
 			}
+			r.Log.V(1).Info("About to run Function", "Function", step.Name)
 			vars := make(map[string]string)
 			r.getFuncVars(function, vars)
 
@@ -155,16 +156,22 @@ func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target fo
 	return nil
 }
 
+// Run the initializing steps in the INITIALIZING state of the controller
+// before actualy doing the backup in the RUNNING state
 func (r *BackupSessionReconciler) runFinalizeBackupSteps(target formolv1alpha1.Target) error {
-	return r.runBackupSteps(true, target)
+	return r.runBackupSteps(false, target)
 }
 
+// Run the finalizing steps in the FINALIZE state of the controller
+// after the backup in the RUNNING state.
+// The finalize happens whatever the result of the backup.
 func (r *BackupSessionReconciler) runInitializeBackupSteps(target formolv1alpha1.Target) error {
 	return r.runBackupSteps(true, target)
 }
 
+// Runs the given command in the target container chroot
 func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args ...string) error {
-	env := regexp.MustCompile(`/proc/[0-9]+/env`)
+	env := regexp.MustCompile(`/proc/[0-9]+/environ`)
 	if err := filepath.Walk("/proc", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -175,11 +182,9 @@ func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args .
 		}
 		// Found an environ file. Start looking for TARGETCONTAINER_TAG
 		if env.MatchString(path) {
-			r.Log.V(0).Info("Looking for tag", "file", path, "TARGETCONTAINER_TAG", formolv1alpha1.TARGETCONTAINER_TAG)
 			content, err := ioutil.ReadFile(path)
 			// cannot read environ file. not the process we want to backup
 			if err != nil {
-				r.Log.Error(err, "unable to read file", "file", path)
 				return filepath.SkipDir
 			}
 			// Loops over the process environement variable looking for TARGETCONTAINER_TAG
@@ -225,7 +230,6 @@ func (r *BackupSessionReconciler) checkRepo(repo string) error {
 	r.Log.V(0).Info("Checking repo", "repo", repo)
 	if err := exec.Command(RESTIC_EXEC, "unlock", "-r", repo).Run(); err != nil {
 		r.Log.Error(err, "unable to unlock repo", "repo", repo)
-		return err
 	}
 	output, err := exec.Command(RESTIC_EXEC, "check", "-r", repo).CombinedOutput()
 	if err != nil {
