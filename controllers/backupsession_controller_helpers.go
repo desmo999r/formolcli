@@ -83,6 +83,8 @@ func (r *BackupSessionReconciler) getFuncEnv(vars map[string]string, envVars []c
 			if env.ValueFrom.SecretKeyRef != nil {
 				vars[env.Name] = r.getEnvFromSecretKeyRef(env.ValueFrom.SecretKeyRef.LocalObjectReference.Name, env.ValueFrom.SecretKeyRef.Key)
 			}
+		} else {
+			vars[env.Name] = env.Value
 		}
 	}
 }
@@ -115,8 +117,40 @@ func (r *BackupSessionReconciler) getFuncVars(function formolv1alpha1.Function, 
 	r.getFuncEnv(vars, function.Spec.Env)
 }
 
-func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target formolv1alpha1.Target) error {
+func (r *BackupSessionReconciler) runFunction(name string) error {
 	namespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)
+	function := formolv1alpha1.Function{}
+	if err := r.Get(r.Context, client.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}, &function); err != nil {
+		r.Log.Error(err, "unable to get Function", "Function", name)
+		return err
+	}
+	vars := make(map[string]string)
+	r.getFuncVars(function, vars)
+
+	r.Log.V(0).Info("function vars", "vars", vars)
+	// Loop through the function.Spec.Command arguments to replace ${ARG}|$(ARG)|$ARG
+	// with the environment variable value
+	pattern := regexp.MustCompile(`^\$\((?P<env>\w+)\)$`)
+	for i, arg := range function.Spec.Args {
+		if pattern.MatchString(arg) {
+			r.Log.V(0).Info("arg matches $()", "arg", arg)
+			arg = pattern.ReplaceAllString(arg, "$env")
+			function.Spec.Args[i] = vars[arg]
+		}
+	}
+	r.Log.V(1).Info("about to run Function", "Function", name, "command", function.Spec.Command, "args", function.Spec.Args)
+	if err := r.runTargetContainerChroot(function.Spec.Command[0],
+		function.Spec.Args...); err != nil {
+		r.Log.Error(err, "unable to run command", "command", function.Spec.Command)
+		return err
+	}
+	return nil
+}
+
+func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target formolv1alpha1.Target) error {
 	r.Log.V(0).Info("start to run the backup steps it any")
 	// For every container listed in the target, run the initialization steps
 	for _, container := range target.Containers {
@@ -125,32 +159,7 @@ func (r *BackupSessionReconciler) runBackupSteps(initializeSteps bool, target fo
 			if (initializeSteps == true && step.Finalize != nil && *step.Finalize == true) || (initializeSteps == false && (step.Finalize == nil || step.Finalize != nil && *step.Finalize == false)) {
 				continue
 			}
-			function := formolv1alpha1.Function{}
-			if err := r.Get(r.Context, client.ObjectKey{
-				Namespace: namespace,
-				Name:      step.Name,
-			}, &function); err != nil {
-				r.Log.Error(err, "unable to get Function", "Function", step.Name)
-				return err
-			}
-			r.Log.V(1).Info("About to run Function", "Function", step.Name)
-			vars := make(map[string]string)
-			r.getFuncVars(function, vars)
-
-			// Loop through the function.Spec.Command arguments to replace ${ARG}|$(ARG)|$ARG
-			// with the environment variable value
-			pattern := regexp.MustCompile(`^\$(\{(?P<env>\w+)\}|^\$\((?P<env>\w+)\)|(?P<env>\w+))$`)
-			for i, arg := range function.Spec.Command[1:] {
-				if pattern.MatchString(arg) {
-					arg = pattern.ReplaceAllString(arg, "$env")
-					function.Spec.Command[i] = vars[arg]
-				}
-			}
-			if err := r.runTargetContainerChroot(function.Spec.Command[0],
-				function.Spec.Command[1:]...); err != nil {
-				r.Log.Error(err, "unable to run command", "command", function.Spec.Command)
-				return err
-			}
+			return r.runFunction(step.Name)
 		}
 	}
 	return nil
@@ -276,5 +285,29 @@ func (r *BackupSessionReconciler) backupPaths(tag string, paths []string) (resul
 	}
 
 	err = cmd.Wait()
+	return
+}
+
+func (r *BackupSessionReconciler) backupJob(tag string, target formolv1alpha1.Target) (result BackupResult, err error) {
+	paths := []string{}
+	for _, container := range target.Containers {
+		for _, job := range container.Job {
+			if err = r.runFunction(job.Name); err != nil {
+				r.Log.Error(err, "unable to run job")
+				return
+			}
+
+		}
+		addPath := true
+		for _, path := range paths {
+			if path == container.SharePath {
+				addPath = false
+			}
+		}
+		if addPath {
+			paths = append(paths, container.SharePath)
+		}
+	}
+	result, err = r.backupPaths(tag, paths)
 	return
 }

@@ -77,14 +77,25 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		case formolv1alpha1.Running:
 			r.Log.V(0).Info("Running state. Do the backup")
 			// Actually do the backup with restic
-			backupPaths := strings.Split(os.Getenv(formolv1alpha1.BACKUP_PATHS), string(os.PathListSeparator))
-			if backupResult, result := r.backupPaths(backupSession.Name, backupPaths); result != nil {
-				r.Log.Error(result, "unable to backup paths", "target name", targetName, "paths", backupPaths)
-			} else {
-				r.Log.V(0).Info("Backup of the paths is over", "target name", targetName, "paths", backupPaths,
-					"snapshotID", backupResult.SnapshotId, "duration", backupResult.Duration)
-				currentTargetStatus.SnapshotId = backupResult.SnapshotId
-				currentTargetStatus.Duration = &metav1.Duration{Duration: time.Now().Sub(currentTargetStatus.StartTime.Time)}
+			switch currentTarget.BackupType {
+			case formolv1alpha1.JobKind:
+				if backupResult, err := r.backupJob(backupSession.Name, currentTarget); err != nil {
+					r.Log.Error(err, "unable to run backup job", "target", targetName)
+				} else {
+					r.Log.V(0).Info("Backup Job is over", "target", targetName, "snapshotID", backupResult.SnapshotId, "duration", backupResult.Duration)
+					currentTargetStatus.SnapshotId = backupResult.SnapshotId
+					currentTargetStatus.Duration = &metav1.Duration{Duration: time.Now().Sub(currentTargetStatus.StartTime.Time)}
+				}
+			case formolv1alpha1.OnlineKind:
+				backupPaths := strings.Split(os.Getenv(formolv1alpha1.BACKUP_PATHS), string(os.PathListSeparator))
+				if backupResult, result := r.backupPaths(backupSession.Name, backupPaths); result != nil {
+					r.Log.Error(result, "unable to backup paths", "target name", targetName, "paths", backupPaths)
+				} else {
+					r.Log.V(0).Info("Backup of the paths is over", "target name", targetName, "paths", backupPaths,
+						"snapshotID", backupResult.SnapshotId, "duration", backupResult.Duration)
+					currentTargetStatus.SnapshotId = backupResult.SnapshotId
+					currentTargetStatus.Duration = &metav1.Duration{Duration: time.Now().Sub(currentTargetStatus.StartTime.Time)}
+				}
 			}
 			newSessionState = formolv1alpha1.Finalize
 		case formolv1alpha1.Finalize:
