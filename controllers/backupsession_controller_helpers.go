@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	corev1 "k8s.io/api/core/v1"
 	"os"
@@ -181,7 +182,7 @@ func (r *BackupSessionReconciler) runInitializeBackupSteps(target formolv1alpha1
 // Runs the given command in the target container chroot
 func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args ...string) error {
 	env := regexp.MustCompile(`/proc/[0-9]+/environ`)
-	if err := filepath.Walk("/proc", func(path string, info os.FileInfo, err error) error {
+	if err := filepath.WalkDir("/proc", func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -194,7 +195,7 @@ func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args .
 			content, err := ioutil.ReadFile(path)
 			// cannot read environ file. not the process we want to backup
 			if err != nil {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 			// Loops over the process environement variable looking for TARGETCONTAINER_TAG
 			for _, env := range bytes.Split(content, []byte{'\000'}) {
@@ -223,7 +224,11 @@ func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args .
 						r.Log.V(0).Info("cmd output", "output", scanner.Text())
 					}
 
-					return cmd.Wait()
+					if err := cmd.Wait(); err != nil {
+						return err
+					} else {
+						return filepath.SkipAll
+					}
 				}
 			}
 		}
