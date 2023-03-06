@@ -21,6 +21,7 @@ type BackupSessionReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 	context.Context
+	Namespace string
 }
 
 func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -52,8 +53,8 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, err
 	}
+	r.Namespace = backupConf.Namespace
 
-	// targetName := os.Getenv(formolv1alpha1.TARGET_NAME)
 	// we don't want a copy because we will modify and update it.
 	var target formolv1alpha1.Target
 	var targetStatus *formolv1alpha1.TargetStatus
@@ -66,6 +67,12 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			targetStatus = &(backupSession.Status.Targets[i])
 			break
 		}
+	}
+
+	// Do preliminary checks with the repository
+	if err = r.setResticEnv(backupConf); err != nil {
+		r.Log.Error(err, "unable to set restic env")
+		return ctrl.Result{}, err
 	}
 
 	var newSessionState formolv1alpha1.SessionState

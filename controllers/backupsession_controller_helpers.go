@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"io"
 	"io/fs"
@@ -15,25 +16,12 @@ import (
 	"regexp"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
-)
-
-var (
-	REPOSITORY            string
-	PASSWORD_FILE         string
-	AWS_ACCESS_KEY_ID     string
-	AWS_SECRET_ACCESS_KEY string
+	"strings"
 )
 
 const (
 	RESTIC_EXEC = "/usr/bin/restic"
 )
-
-func init() {
-	REPOSITORY = os.Getenv(formolv1alpha1.RESTIC_REPOSITORY)
-	PASSWORD_FILE = os.Getenv(formolv1alpha1.RESTIC_PASSWORD)
-	AWS_ACCESS_KEY_ID = os.Getenv(formolv1alpha1.AWS_ACCESS_KEY_ID)
-	AWS_SECRET_ACCESS_KEY = os.Getenv(formolv1alpha1.AWS_SECRET_ACCESS_KEY)
-}
 
 func (r *BackupSessionReconciler) getSecretData(name string) map[string][]byte {
 	secret := corev1.Secret{}
@@ -116,6 +104,29 @@ func (r *BackupSessionReconciler) getFuncEnvFrom(vars map[string]string, envVars
 func (r *BackupSessionReconciler) getFuncVars(function formolv1alpha1.Function, vars map[string]string) {
 	r.getFuncEnvFrom(vars, function.Spec.EnvFrom)
 	r.getFuncEnv(vars, function.Spec.Env)
+}
+
+func (r *BackupSessionReconciler) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
+	repo := formolv1alpha1.Repo{}
+	if err := r.Get(r.Context, client.ObjectKey{
+		Namespace: backupConf.Namespace,
+		Name:      backupConf.Spec.Repository,
+	}, &repo); err != nil {
+		r.Log.Error(err, "unable to get repo")
+		return err
+	}
+	if repo.Spec.Backend.S3 != nil {
+		os.Setenv(formolv1alpha1.RESTIC_REPOSITORY, fmt.Sprintf("s3:http://%s/%s/%s-%s",
+			repo.Spec.Backend.S3.Server,
+			repo.Spec.Backend.S3.Bucket,
+			strings.ToUpper(backupConf.Namespace),
+			strings.ToLower(backupConf.Name)))
+		data := r.getSecretData(repo.Spec.RepositorySecrets)
+		os.Setenv(formolv1alpha1.AWS_SECRET_ACCESS_KEY, string(data[formolv1alpha1.AWS_SECRET_ACCESS_KEY]))
+		os.Setenv(formolv1alpha1.AWS_ACCESS_KEY_ID, string(data[formolv1alpha1.AWS_ACCESS_KEY_ID]))
+		os.Setenv(formolv1alpha1.RESTIC_PASSWORD, string(data[formolv1alpha1.RESTIC_PASSWORD]))
+	}
+	return nil
 }
 
 func (r *BackupSessionReconciler) runFunction(name string) error {
@@ -240,15 +251,15 @@ func (r *BackupSessionReconciler) runTargetContainerChroot(runCmd string, args .
 	return nil
 }
 
-func (r *BackupSessionReconciler) checkRepo(repo string) error {
-	r.Log.V(0).Info("Checking repo", "repo", repo)
-	if err := exec.Command(RESTIC_EXEC, "unlock", "-r", repo).Run(); err != nil {
-		r.Log.Error(err, "unable to unlock repo", "repo", repo)
+func (r *BackupSessionReconciler) checkRepo() error {
+	r.Log.V(0).Info("Checking repo")
+	if err := exec.Command(RESTIC_EXEC, "unlock").Run(); err != nil {
+		r.Log.Error(err, "unable to unlock repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
 	}
-	output, err := exec.Command(RESTIC_EXEC, "check", "-r", repo).CombinedOutput()
+	output, err := exec.Command(RESTIC_EXEC, "check").CombinedOutput()
 	if err != nil {
-		r.Log.V(0).Info("Initializing new repo", "repo", repo)
-		output, err = exec.Command(RESTIC_EXEC, "init", "-r", repo).CombinedOutput()
+		r.Log.V(0).Info("Initializing new repo")
+		output, err = exec.Command(RESTIC_EXEC, "init").CombinedOutput()
 		if err != nil {
 			r.Log.Error(err, "something went wrong during repo init", "output", output)
 		}
@@ -262,12 +273,12 @@ type BackupResult struct {
 }
 
 func (r *BackupSessionReconciler) backupPaths(tag string, paths []string) (result BackupResult, err error) {
-	if err = r.checkRepo(REPOSITORY); err != nil {
-		r.Log.Error(err, "unable to setup repo", "repo", REPOSITORY)
+	if err = r.checkRepo(); err != nil {
+		r.Log.Error(err, "unable to setup repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
 		return
 	}
 	r.Log.V(0).Info("backing up paths", "paths", paths)
-	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", tag, "-r", REPOSITORY}, paths...)...)
+	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", tag}, paths...)...)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	_ = cmd.Start()
