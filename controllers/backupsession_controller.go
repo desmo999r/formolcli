@@ -2,10 +2,8 @@ package controllers
 
 import (
 	"context"
-	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,11 +15,7 @@ import (
 )
 
 type BackupSessionReconciler struct {
-	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
-	context.Context
-	Namespace string
+	Session
 }
 
 func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -85,7 +79,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Run the initializing Steps and then move to Initialized or Failure
 		r.Log.V(0).Info("Start to run the backup initializing steps is any")
 		// Runs the Steps functions in chroot env
-		if err := r.runInitializeBackupSteps(target); err != nil {
+		if err := r.runInitializeSteps(target); err != nil {
 			r.Log.Error(err, "unable to run the initialization steps")
 			newSessionState = formolv1alpha1.Failure
 		} else {
@@ -124,7 +118,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Run the finalize Steps and move to Success or Failure
 		r.Log.V(0).Info("Backup is over. Run the finalize steps is any")
 		// Runs the finalize Steps functions in chroot env
-		if result = r.runFinalizeBackupSteps(target); result != nil {
+		if result = r.runFinalizeSteps(target); result != nil {
 			r.Log.Error(err, "unable to run finalize steps")
 		}
 		if targetStatus.SnapshotId == "" {
