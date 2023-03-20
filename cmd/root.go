@@ -4,10 +4,41 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"os"
-
+	"fmt"
+	"github.com/desmo999r/formolcli/backupsession"
+	"github.com/desmo999r/formolcli/controllers"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	"os"
 )
+
+var createBackupSessionCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a backupsession",
+	Run: func(cmd *cobra.Command, args []string) {
+		name, _ := cmd.Flags().GetString("name")
+		namespace, _ := cmd.Flags().GetString("namespace")
+		fmt.Println("create backupsession called")
+		backupsession.CreateBackupSession(corev1.ObjectReference{
+			Namespace: namespace,
+			Name:      name,
+		})
+	},
+}
+
+var startServerCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start a BackupSession / RestoreSession controller",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("starts backupsession controller")
+		controllers.StartServer()
+	},
+}
+
+var backupSessionCmd = &cobra.Command{
+	Use:   "backupsession",
+	Short: "All the BackupSession related commands",
+}
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -34,13 +65,11 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.formolcli.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.AddCommand(backupSessionCmd)
+	backupSessionCmd.AddCommand(createBackupSessionCmd)
+	rootCmd.AddCommand(startServerCmd)
+	createBackupSessionCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
+	createBackupSessionCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
+	createBackupSessionCmd.MarkFlagRequired("namespace")
+	createBackupSessionCmd.MarkFlagRequired("name")
 }

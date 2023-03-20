@@ -27,6 +27,49 @@ type Session struct {
 	Namespace string
 }
 
+const (
+	RESTIC_EXEC = "/usr/bin/restic"
+)
+
+func (s Session) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
+	repo := formolv1alpha1.Repo{}
+	if err := s.Get(r.Context, client.ObjectKey{
+		Namespace: backupConf.Namespace,
+		Name:      backupConf.Spec.Repository,
+	}, &repo); err != nil {
+		s.Log.Error(err, "unable to get repo")
+		return err
+	}
+	if repo.Spec.Backend.S3 != nil {
+		os.Setenv(formolv1alpha1.RESTIC_REPOSITORY, fmt.Sprintf("s3:http://%s/%s/%s-%s",
+			repo.Spec.Backend.S3.Server,
+			repo.Spec.Backend.S3.Bucket,
+			strings.ToUpper(backupConf.Namespace),
+			strings.ToLower(backupConf.Name)))
+		data := s.getSecretData(repo.Spec.RepositorySecrets)
+		os.Setenv(formolv1alpha1.AWS_SECRET_ACCESS_KEY, string(data[formolv1alpha1.AWS_SECRET_ACCESS_KEY]))
+		os.Setenv(formolv1alpha1.AWS_ACCESS_KEY_ID, string(data[formolv1alpha1.AWS_ACCESS_KEY_ID]))
+		os.Setenv(formolv1alpha1.RESTIC_PASSWORD, string(data[formolv1alpha1.RESTIC_PASSWORD]))
+	}
+	return nil
+}
+
+func (s Session) checkRepo() error {
+	s.Log.V(0).Info("Checking repo")
+	if err := exec.Command(RESTIC_EXEC, "unlock").Run(); err != nil {
+		s.Log.Error(err, "unable to unlock repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
+	}
+	output, err := exec.Command(RESTIC_EXEC, "check").CombinedOutput()
+	if err != nil {
+		s.Log.V(0).Info("Initializing new repo")
+		output, err = exec.Command(RESTIC_EXEC, "init").CombinedOutput()
+		if err != nil {
+			s.Log.Error(err, "something went wrong during repo init", "output", output)
+		}
+	}
+	return err
+}
+
 func (s Session) getSecretData(name string) map[string][]byte {
 	secret := corev1.Secret{}
 	namespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)
