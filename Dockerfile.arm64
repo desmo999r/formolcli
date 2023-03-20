@@ -1,6 +1,6 @@
 # Build a small image
-FROM --platform=linux/amd64 alpine:3
-RUN apk add --no-cache su-exec restic
+FROM --platform=linux/arm64 alpine:3
+RUN apk add --no-cache su-exec restic postgresql-client
 COPY ./bin/formolcli /usr/local/bin
 
 # Command to run
