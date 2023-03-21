@@ -3,13 +3,10 @@ package controllers
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"io"
 	"os"
 	"os/exec"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
 )
 
 type BackupResult struct {

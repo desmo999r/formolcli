@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/go-logr/logr"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strconv"
+	"strings"
 )
 
 type Session struct {
@@ -33,7 +35,7 @@ const (
 
 func (s Session) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
 	repo := formolv1alpha1.Repo{}
-	if err := s.Get(r.Context, client.ObjectKey{
+	if err := s.Get(s.Context, client.ObjectKey{
 		Namespace: backupConf.Namespace,
 		Name:      backupConf.Spec.Repository,
 	}, &repo); err != nil {
