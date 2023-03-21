@@ -4,7 +4,9 @@ import (
 	"context"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -24,8 +26,96 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, err
 	}
-	switch restoreSession.Status.SessionState {
+	if len(restoreSession.Status.Targets) == 0 {
+		r.Log.V(0).Info("RestoreSession still being initialized by the main controller. Wait for the next update...")
+		return ctrl.Result{}, nil
+	}
+	// We need the BackupConfiguration to get information about our restore target
+	backupSession := formolv1alpha1.BackupSession{
+		Spec:   restoreSession.Spec.BackupSessionRef.Spec,
+		Status: restoreSession.Spec.BackupSessionRef.Status,
+	}
+	backupConf := formolv1alpha1.BackupConfiguration{}
+	err = r.Get(r.Context, client.ObjectKey{
+		Namespace: backupSession.Spec.Ref.Namespace,
+		Name:      backupSession.Spec.Ref.Name,
+	}, &backupConf)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	r.Namespace = backupConf.Namespace
+
+	// we don't want a copy because we will modify and update it.
+	var target formolv1alpha1.Target
+	var targetStatus *formolv1alpha1.TargetStatus
+	targetName := os.Getenv(formolv1alpha1.TARGET_NAME)
+
+	for i, t := range backupConf.Spec.Targets {
+		if t.TargetName == targetName {
+			target = t
+			targetStatus = &(restoreSession.Status.Targets[i])
+			break
+		}
+	}
+
+	// Do preliminary checks with the repository
+	if err = r.setResticEnv(backupConf); err != nil {
+		r.Log.Error(err, "unable to set restic env")
+		return ctrl.Result{}, err
+	}
+
+	var newSessionState formolv1alpha1.SessionState
+	switch targetStatus.SessionState {
 	case formolv1alpha1.New:
+		// New session move to Initializing
+		r.Log.V(0).Info("New session. Move to Initializing state")
+		newSessionState = formolv1alpha1.Initializing
+	case formolv1alpha1.Initializing:
+		// Run the initializing Steps and then move to Initialized or Failure
+		r.Log.V(0).Info("Start to run the backup initializing steps is any")
+		// Runs the Steps functions in chroot env
+		if err := r.runInitializeSteps(target); err != nil {
+			r.Log.Error(err, "unable to run the initialization steps")
+			newSessionState = formolv1alpha1.Failure
+		} else {
+			r.Log.V(0).Info("Done with the initializing Steps. Move to Initialized state")
+			newSessionState = formolv1alpha1.Initialized
+		}
+	case formolv1alpha1.Running:
+		// Do the restore and move to Waiting once it is done.
+		// The restore is different if the Backup was an OnlineKind or a JobKind
+		switch target.BackupType {
+		case formolv1alpha1.JobKind:
+		case formolv1alpha1.OnlineKind:
+			// The restore has to be done by an initContainer since the data is mounted RO
+			// We create the initContainer here
+			// Once the the container has rebooted and the initContainer has done its job, it will change the targetStatus to Waiting.
+			targetObject, targetPodSpec := formolv1alpha1.GetTargetObjects(target.TargetKind)
+			if err := r.Get(r.Context, client.ObjectKey{
+				Namespace: backupConf.Namespace,
+				Name:      target.TargetName,
+			}, targetObject); err != nil {
+				r.Log.Error(err, "unable to get target objects", "target", target.TargetName)
+				return ctrl.Result{}, err
+			}
+			initContainer := corev1.Container {}
+			targetPodSpec.InitContainers = append(targetPodSpec.InitContainers, initContainer)
+			if err := r.Update(r.Context, targetObject); err != nil {
+				r.Log.Error(err, "unable to add the restore init container", "targetObject", targetObject)
+				return ctrl.Result{}, err
+			}
+		}
+	}
+	if newSessionState != "" {
+		targetStatus.SessionState = newSessionState
+		err := r.Status().Update(ctx, &restoreSession)
+		if err != nil {
+			r.Log.Error(err, "unable to update RestoreSession status")
+		}
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
