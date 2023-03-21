@@ -5,8 +5,8 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/desmo999r/formolcli/backupsession"
 	"github.com/desmo999r/formolcli/controllers"
+	"github.com/desmo999r/formolcli/session"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"os"
@@ -19,7 +19,7 @@ var createBackupSessionCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		namespace, _ := cmd.Flags().GetString("namespace")
 		fmt.Println("create backupsession called")
-		backupsession.CreateBackupSession(corev1.ObjectReference{
+		session.CreateBackupSession(corev1.ObjectReference{
 			Namespace: namespace,
 			Name:      name,
 		})
