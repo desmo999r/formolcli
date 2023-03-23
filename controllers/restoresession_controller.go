@@ -12,6 +12,8 @@ import (
 
 type RestoreSessionReconciler struct {
 	Session
+	backupConf     formolv1alpha1.BackupConfiguration
+	restoreSession formolv1alpha1.RestoreSession
 }
 
 func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -30,6 +32,7 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.Log.V(0).Info("RestoreSession still being initialized by the main controller. Wait for the next update...")
 		return ctrl.Result{}, nil
 	}
+	r.restoreSession = restoreSession
 	// We need the BackupConfiguration to get information about our restore target
 	backupSession := formolv1alpha1.BackupSession{
 		Spec:   restoreSession.Spec.BackupSessionRef.Spec,
@@ -47,16 +50,17 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	r.Namespace = backupConf.Namespace
+	r.backupConf = backupConf
 
 	// we don't want a copy because we will modify and update it.
 	var target formolv1alpha1.Target
-	var targetStatus *formolv1alpha1.TargetStatus
+	var restoreTargetStatus *formolv1alpha1.TargetStatus
 	targetName := os.Getenv(formolv1alpha1.TARGET_NAME)
 
 	for i, t := range backupConf.Spec.Targets {
 		if t.TargetName == targetName {
 			target = t
-			targetStatus = &(restoreSession.Status.Targets[i])
+			restoreTargetStatus = &(restoreSession.Status.Targets[i])
 			break
 		}
 	}
@@ -68,7 +72,7 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	var newSessionState formolv1alpha1.SessionState
-	switch targetStatus.SessionState {
+	switch restoreTargetStatus.SessionState {
 	case formolv1alpha1.New:
 		// New session move to Initializing
 		r.Log.V(0).Info("New session. Move to Initializing state")
@@ -90,27 +94,14 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		switch target.BackupType {
 		case formolv1alpha1.JobKind:
 		case formolv1alpha1.OnlineKind:
-			// The restore has to be done by an initContainer since the data is mounted RO
-			// We create the initContainer here
-			// Once the the container has rebooted and the initContainer has done its job, it will change the targetStatus to Waiting.
-			targetObject, targetPodSpec := formolv1alpha1.GetTargetObjects(target.TargetKind)
-			if err := r.Get(r.Context, client.ObjectKey{
-				Namespace: backupConf.Namespace,
-				Name:      target.TargetName,
-			}, targetObject); err != nil {
-				r.Log.Error(err, "unable to get target objects", "target", target.TargetName)
-				return ctrl.Result{}, err
-			}
-			initContainer := corev1.Container {}
-			targetPodSpec.InitContainers = append(targetPodSpec.InitContainers, initContainer)
-			if err := r.Update(r.Context, targetObject); err != nil {
-				r.Log.Error(err, "unable to add the restore init container", "targetObject", targetObject)
+			if err := r.restoreInitContainer(target); err != nil {
+				r.Log.Error(err, "unable to create restore initContainer", "target", target)
 				return ctrl.Result{}, err
 			}
 		}
 	}
 	if newSessionState != "" {
-		targetStatus.SessionState = newSessionState
+		restoreTargetStatus.SessionState = newSessionState
 		err := r.Status().Update(ctx, &restoreSession)
 		if err != nil {
 			r.Log.Error(err, "unable to update RestoreSession status")

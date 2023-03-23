@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/desmo999r/formolcli/controllers"
-	"github.com/desmo999r/formolcli/session"
+	"github.com/desmo999r/formolcli/standalone"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"os"
@@ -19,10 +19,21 @@ var createBackupSessionCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		namespace, _ := cmd.Flags().GetString("namespace")
 		fmt.Println("create backupsession called")
-		session.CreateBackupSession(corev1.ObjectReference{
+		standalone.CreateBackupSession(corev1.ObjectReference{
 			Namespace: namespace,
 			Name:      name,
 		})
+	},
+}
+
+var startRestoreSessionCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Restore a restic snapshot",
+	Run: func(cmd *cobra.Command, args []string) {
+		restoreSessionName, _ := cmd.Flags().GetString("name")
+		restoreSessionNamespace, _ := cmd.Flags().GetString("namespace")
+		targetName, _ := cmd.Flags().GetString("target-name")
+		standalone.StartRestore(restoreSessionName, restoreSessionNamespace, targetName)
 	},
 }
 
@@ -33,6 +44,11 @@ var startServerCmd = &cobra.Command{
 		fmt.Println("starts backupsession controller")
 		controllers.StartServer()
 	},
+}
+
+var restoreSessionCmd = &cobra.Command{
+	Use:   "restoresession",
+	Short: "All the RestoreSession related commands",
 }
 
 var backupSessionCmd = &cobra.Command{
@@ -66,10 +82,18 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(backupSessionCmd)
+	rootCmd.AddCommand(restoreSessionCmd)
 	backupSessionCmd.AddCommand(createBackupSessionCmd)
+	restoreSessionCmd.AddCommand(startRestoreSessionCmd)
 	rootCmd.AddCommand(startServerCmd)
 	createBackupSessionCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.MarkFlagRequired("namespace")
 	createBackupSessionCmd.MarkFlagRequired("name")
+	startRestoreSessionCmd.Flags().String("namespace", "", "The namespace of RestoreSession")
+	startRestoreSessionCmd.Flags().String("name", "", "The name of RestoreSession")
+	startRestoreSessionCmd.Flags().String("target-name", "", "The name of target being restored")
+	startRestoreSessionCmd.MarkFlagRequired("namespace")
+	startRestoreSessionCmd.MarkFlagRequired("name")
+	startRestoreSessionCmd.MarkFlagRequired("target-name")
 }

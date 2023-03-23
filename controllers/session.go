@@ -33,30 +33,51 @@ const (
 	RESTIC_EXEC = "/usr/bin/restic"
 )
 
-func (s Session) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
+func (s Session) getResticEnv(backupConf formolv1alpha1.BackupConfiguration) (envs []corev1.EnvVar, err error) {
 	repo := formolv1alpha1.Repo{}
-	if err := s.Get(s.Context, client.ObjectKey{
+	if err = s.Get(s.Context, client.ObjectKey{
 		Namespace: backupConf.Namespace,
 		Name:      backupConf.Spec.Repository,
 	}, &repo); err != nil {
 		s.Log.Error(err, "unable to get repo")
-		return err
+		return
 	}
 	if repo.Spec.Backend.S3 != nil {
-		os.Setenv(formolv1alpha1.RESTIC_REPOSITORY, fmt.Sprintf("s3:http://%s/%s/%s-%s",
-			repo.Spec.Backend.S3.Server,
-			repo.Spec.Backend.S3.Bucket,
-			strings.ToUpper(backupConf.Namespace),
-			strings.ToLower(backupConf.Name)))
+		envs = append(envs, corev1.EnvVar{
+			Name: formolv1alpha1.RESTIC_REPOSITORY,
+			Value: fmt.Sprintf("s3:http://%s/%s/%s-%s",
+				repo.Spec.Backend.S3.Server,
+				repo.Spec.Backend.S3.Bucket,
+				strings.ToUpper(backupConf.Namespace),
+				strings.ToLower(backupConf.Name)),
+		})
+
 		data := s.getSecretData(repo.Spec.RepositorySecrets)
-		os.Setenv(formolv1alpha1.AWS_SECRET_ACCESS_KEY, string(data[formolv1alpha1.AWS_SECRET_ACCESS_KEY]))
-		os.Setenv(formolv1alpha1.AWS_ACCESS_KEY_ID, string(data[formolv1alpha1.AWS_ACCESS_KEY_ID]))
-		os.Setenv(formolv1alpha1.RESTIC_PASSWORD, string(data[formolv1alpha1.RESTIC_PASSWORD]))
+		envs = append(envs, corev1.EnvVar{
+			Name:  formolv1alpha1.AWS_ACCESS_KEY_ID,
+			Value: string(data[formolv1alpha1.AWS_ACCESS_KEY_ID]),
+		})
+		envs = append(envs, corev1.EnvVar{
+			Name:  formolv1alpha1.AWS_SECRET_ACCESS_KEY,
+			Value: string(data[formolv1alpha1.AWS_SECRET_ACCESS_KEY]),
+		})
+		envs = append(envs, corev1.EnvVar{
+			Name:  formolv1alpha1.RESTIC_PASSWORD,
+			Value: string(data[formolv1alpha1.RESTIC_PASSWORD]),
+		})
 	}
-	return nil
+	return
 }
 
-func (s Session) checkRepo() error {
+func (s Session) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
+	envs, err := s.getResticEnv(backupConf)
+	for _, env := range envs {
+		os.Setenv(env.Name, env.Value)
+	}
+	return err
+}
+
+func (s Session) CheckRepo() error {
 	s.Log.V(0).Info("Checking repo")
 	if err := exec.Command(RESTIC_EXEC, "unlock").Run(); err != nil {
 		s.Log.Error(err, "unable to unlock repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))

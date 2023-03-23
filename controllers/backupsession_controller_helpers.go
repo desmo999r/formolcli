@@ -15,7 +15,7 @@ type BackupResult struct {
 }
 
 func (r *BackupSessionReconciler) backupPaths(tag string, paths []string) (result BackupResult, err error) {
-	if err = r.checkRepo(); err != nil {
+	if err = r.CheckRepo(); err != nil {
 		r.Log.Error(err, "unable to setup repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
 		return
 	}
