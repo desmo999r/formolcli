@@ -54,6 +54,9 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	var targetStatus *formolv1alpha1.TargetStatus
 	var result error
 	targetName := os.Getenv(formolv1alpha1.TARGET_NAME)
+	if targetName == "" {
+		panic("targetName is empty. That should not happen")
+	}
 
 	for i, t := range backupConf.Spec.Targets {
 		if t.TargetName == targetName {

@@ -87,6 +87,27 @@ func StartRestore(
 				log.Error(err, "unable to update RestoreSession", "restoreSession", restoreSession)
 				return
 			}
+			log.V(0).Info("restore over. removing the initContainer")
+			targetObject, targetPodSpec := formolv1alpha1.GetTargetObjects(target.TargetKind)
+			if err := session.Get(session.Context, client.ObjectKey{
+				Namespace: restoreSessionNamespace,
+				Name:      target.TargetName,
+			}, targetObject); err != nil {
+				log.Error(err, "unable to get target objects", "target", target.TargetName)
+				return
+			}
+			initContainers := []corev1.Container{}
+			for _, c := range targetPodSpec.InitContainers {
+				if c.Name == formolv1alpha1.RESTORECONTAINER_NAME {
+					continue
+				}
+				initContainers = append(initContainers, c)
+			}
+			targetPodSpec.InitContainers = initContainers
+			if err := session.Update(session.Context, targetObject); err != nil {
+				log.Error(err, "unable to remove the restore initContainer", "targetObject", targetObject)
+				return
+			}
 			break
 		}
 	}
