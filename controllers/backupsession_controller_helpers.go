@@ -50,7 +50,7 @@ func (r *BackupSessionReconciler) backupJob(tag string, target formolv1alpha1.Ta
 	paths := []string{}
 	for _, container := range target.Containers {
 		for _, job := range container.Job {
-			if err = r.runFunction(job.Name); err != nil {
+			if err = r.runFunction("backup-" + job.Name); err != nil {
 				r.Log.Error(err, "unable to run job")
 				return
 			}

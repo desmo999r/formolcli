@@ -271,7 +271,6 @@ func (s Session) runTargetContainerChroot(runCmd string, args ...string) error {
 }
 
 func (s Session) runSteps(initializeSteps bool, target formolv1alpha1.Target) error {
-	s.Log.V(0).Info("start to run the backup steps it any")
 	// For every container listed in the target, run the initialization steps
 	for _, container := range target.Containers {
 		// Runs the steps one after the other
@@ -282,12 +281,14 @@ func (s Session) runSteps(initializeSteps bool, target formolv1alpha1.Target) er
 			return s.runFunction(step.Name)
 		}
 	}
+	s.Log.V(0).Info("Done running steps")
 	return nil
 }
 
 // Run the initializing steps in the INITIALIZING state of the controller
 // before actualy doing the backup in the RUNNING state
 func (s Session) runFinalizeSteps(target formolv1alpha1.Target) error {
+	s.Log.V(0).Info("start to run the finalize steps it any")
 	return s.runSteps(false, target)
 }
 
@@ -295,5 +296,6 @@ func (s Session) runFinalizeSteps(target formolv1alpha1.Target) error {
 // after the backup in the RUNNING state.
 // The finalize happens whatever the result of the backup.
 func (s Session) runInitializeSteps(target formolv1alpha1.Target) error {
+	s.Log.V(0).Info("start to run the initialize steps it any")
 	return s.runSteps(true, target)
 }

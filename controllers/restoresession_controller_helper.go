@@ -3,6 +3,7 @@ package controllers
 import (
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"os/exec"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,6 +52,24 @@ func (r *RestoreSessionReconciler) restoreInitContainer(target formolv1alpha1.Ta
 	if err := r.Update(r.Context, targetObject); err != nil {
 		r.Log.Error(err, "unable to add the restore init container", "targetObject", targetObject)
 		return err
+	}
+	return nil
+}
+
+func (r *RestoreSessionReconciler) restoreJob(target formolv1alpha1.Target, targetStatus formolv1alpha1.TargetStatus) error {
+	cmd := exec.Command(RESTIC_EXEC, "restore", targetStatus.SnapshotId, "--target", "/")
+	// the restic restore command does not support JSON output
+	if output, err := cmd.CombinedOutput(); err != nil {
+		r.Log.Error(err, "unable to restore snapshot", "output", output)
+		return err
+	}
+	for _, container := range target.Containers {
+		for _, job := range container.Job {
+			if err := r.runFunction("restore-" + job.Name); err != nil {
+				r.Log.Error(err, "unable to run restore job")
+				return err
+			}
+		}
 	}
 	return nil
 }

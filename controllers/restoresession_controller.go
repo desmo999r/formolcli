@@ -55,12 +55,14 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// we don't want a copy because we will modify and update it.
 	var target formolv1alpha1.Target
 	var restoreTargetStatus *formolv1alpha1.TargetStatus
+	var backupTargetStatus formolv1alpha1.TargetStatus
 	targetName := os.Getenv(formolv1alpha1.TARGET_NAME)
 
 	for i, t := range backupConf.Spec.Targets {
 		if t.TargetName == targetName {
 			target = t
 			restoreTargetStatus = &(restoreSession.Status.Targets[i])
+			backupTargetStatus = backupSession.Status.Targets[i]
 			break
 		}
 	}
@@ -93,11 +95,32 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// The restore is different if the Backup was an OnlineKind or a JobKind
 		switch target.BackupType {
 		case formolv1alpha1.JobKind:
+			r.Log.V(0).Info("restoring job backup", "target", target)
+			if err := r.restoreJob(target, backupTargetStatus); err != nil {
+				r.Log.Error(err, "unable to restore job", "target", target)
+				newSessionState = formolv1alpha1.Failure
+			} else {
+				r.Log.V(0).Info("job backup restore was a success", "target", target)
+				newSessionState = formolv1alpha1.Success
+			}
 		case formolv1alpha1.OnlineKind:
+			// The initContainer will update the SessionState of the target
+			// once it is done with the restore
+			r.Log.V(0).Info("restoring online backup", "target", target)
 			if err := r.restoreInitContainer(target); err != nil {
 				r.Log.Error(err, "unable to create restore initContainer", "target", target)
-				return ctrl.Result{}, err
+				newSessionState = formolv1alpha1.Failure
 			}
+		}
+	case formolv1alpha1.Finalize:
+		r.Log.V(0).Info("We are done with the restore. Run the finalize steps")
+		// Runs the finalize Steps functions in chroot env
+		if err := r.runFinalizeSteps(target); err != nil {
+			r.Log.Error(err, "unable to run finalize steps")
+			newSessionState = formolv1alpha1.Failure
+		} else {
+			r.Log.V(0).Info("Ran the finalize steps. Restore was a success")
+			newSessionState = formolv1alpha1.Success
 		}
 	}
 	if newSessionState != "" {
