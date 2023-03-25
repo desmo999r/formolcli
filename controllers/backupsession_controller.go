@@ -67,7 +67,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Do preliminary checks with the repository
-	if err = r.setResticEnv(backupConf); err != nil {
+	if err = r.SetResticEnv(backupConf); err != nil {
 		r.Log.Error(err, "unable to set restic env")
 		return ctrl.Result{}, err
 	}

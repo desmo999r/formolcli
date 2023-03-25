@@ -141,3 +141,26 @@ func CreateBackupSession(ref corev1.ObjectReference) {
 		os.Exit(1)
 	}
 }
+
+func DeleteSnapshot(namespace string, name string, snapshotId string) {
+	log := session.Log.WithName("DeleteSnapshot")
+	session.Namespace = namespace
+	backupConf := formolv1alpha1.BackupConfiguration{}
+	if err := session.Get(session.Context, client.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}, &backupConf); err != nil {
+		log.Error(err, "unable to get the BackupConf")
+		return
+	}
+	if err := session.SetResticEnv(backupConf); err != nil {
+		log.Error(err, "unable to set the restic env")
+		return
+	}
+	log.V(0).Info("deleting restic snapshot", "snapshotId", snapshotId)
+	cmd := exec.Command(controllers.RESTIC_EXEC, "forget", "--prune", snapshotId)
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Error(err, "unable to delete snapshot", "snapshoId", snapshotId)
+	}
+}

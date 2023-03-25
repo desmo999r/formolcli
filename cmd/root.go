@@ -56,6 +56,22 @@ var backupSessionCmd = &cobra.Command{
 	Short: "All the BackupSession related commands",
 }
 
+var snapshotCmd = &cobra.Command{
+	Use:   "snapshot",
+	Short: "All the snapshot related commands",
+}
+
+var deleteSnapshotCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete a snapshot",
+	Run: func(cmd *cobra.Command, args []string) {
+		name, _ := cmd.Flags().GetString("name")
+		namespace, _ := cmd.Flags().GetString("namespace")
+		snapshotId, _ := cmd.Flags().GetString("snapshot-id")
+		standalone.DeleteSnapshot(namespace, name, snapshotId)
+	},
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "formolcli",
@@ -83,8 +99,10 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(backupSessionCmd)
 	rootCmd.AddCommand(restoreSessionCmd)
+	rootCmd.AddCommand(snapshotCmd)
 	backupSessionCmd.AddCommand(createBackupSessionCmd)
 	restoreSessionCmd.AddCommand(startRestoreSessionCmd)
+	snapshotCmd.AddCommand(deleteSnapshotCmd)
 	rootCmd.AddCommand(startServerCmd)
 	createBackupSessionCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
@@ -96,4 +114,10 @@ func init() {
 	startRestoreSessionCmd.MarkFlagRequired("namespace")
 	startRestoreSessionCmd.MarkFlagRequired("name")
 	startRestoreSessionCmd.MarkFlagRequired("target-name")
+	deleteSnapshotCmd.Flags().String("snapshot-id", "", "The snapshot id to delete")
+	deleteSnapshotCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
+	deleteSnapshotCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
+	deleteSnapshotCmd.MarkFlagRequired("snapshot-id")
+	deleteSnapshotCmd.MarkFlagRequired("namespace")
+	deleteSnapshotCmd.MarkFlagRequired("name")
 }

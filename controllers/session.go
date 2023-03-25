@@ -69,7 +69,7 @@ func (s Session) getResticEnv(backupConf formolv1alpha1.BackupConfiguration) (en
 	return
 }
 
-func (s Session) setResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
+func (s Session) SetResticEnv(backupConf formolv1alpha1.BackupConfiguration) error {
 	envs, err := s.getResticEnv(backupConf)
 	for _, env := range envs {
 		os.Setenv(env.Name, env.Value)
@@ -95,9 +95,8 @@ func (s Session) CheckRepo() error {
 
 func (s Session) getSecretData(name string) map[string][]byte {
 	secret := corev1.Secret{}
-	namespace := os.Getenv(formolv1alpha1.POD_NAMESPACE)
 	if err := s.Get(s.Context, client.ObjectKey{
-		Namespace: namespace,
+		Namespace: s.Namespace,
 		Name:      name,
 	}, &secret); err != nil {
 		s.Log.Error(err, "unable to get Secret", "Secret", name)
