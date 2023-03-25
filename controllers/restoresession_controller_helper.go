@@ -65,7 +65,7 @@ func (r *RestoreSessionReconciler) restoreJob(target formolv1alpha1.Target, targ
 	}
 	for _, container := range target.Containers {
 		for _, job := range container.Job {
-			if err := r.runFunction("restore-" + job.Name); err != nil {
+			if err := r.runFunction(*job.Restore); err != nil {
 				r.Log.Error(err, "unable to run restore job")
 				return err
 			}

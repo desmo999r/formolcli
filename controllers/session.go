@@ -270,15 +270,18 @@ func (s Session) runTargetContainerChroot(runCmd string, args ...string) error {
 	return nil
 }
 
-func (s Session) runSteps(initializeSteps bool, target formolv1alpha1.Target) error {
+type selectStep func(formolv1alpha1.Step) *string
+
+func (s Session) runSteps(target formolv1alpha1.Target, fn selectStep) error {
 	// For every container listed in the target, run the initialization steps
 	for _, container := range target.Containers {
 		// Runs the steps one after the other
 		for _, step := range container.Steps {
-			if (initializeSteps == true && step.Finalize != nil && *step.Finalize == true) || (initializeSteps == false && (step.Finalize == nil || step.Finalize != nil && *step.Finalize == false)) {
-				continue
+			if fn(step) != nil {
+				if err := s.runFunction(*fn(step)); err != nil {
+					return err
+				}
 			}
-			return s.runFunction(step.Name)
 		}
 	}
 	s.Log.V(0).Info("Done running steps")
@@ -287,15 +290,19 @@ func (s Session) runSteps(initializeSteps bool, target formolv1alpha1.Target) er
 
 // Run the initializing steps in the INITIALIZING state of the controller
 // before actualy doing the backup in the RUNNING state
-func (s Session) runFinalizeSteps(target formolv1alpha1.Target) error {
+func (s Session) runInitializeSteps(target formolv1alpha1.Target) error {
 	s.Log.V(0).Info("start to run the finalize steps it any")
-	return s.runSteps(false, target)
+	return s.runSteps(target, func(step formolv1alpha1.Step) *string {
+		return step.Initialize
+	})
 }
 
 // Run the finalizing steps in the FINALIZE state of the controller
 // after the backup in the RUNNING state.
 // The finalize happens whatever the result of the backup.
-func (s Session) runInitializeSteps(target formolv1alpha1.Target) error {
+func (s Session) runFinalizeSteps(target formolv1alpha1.Target) error {
 	s.Log.V(0).Info("start to run the initialize steps it any")
-	return s.runSteps(true, target)
+	return s.runSteps(target, func(step formolv1alpha1.Step) *string {
+		return step.Finalize
+	})
 }
