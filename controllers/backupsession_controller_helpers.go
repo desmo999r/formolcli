@@ -98,8 +98,13 @@ func (r *BackupSessionReconciler) backupSnapshot(target formolv1alpha1.Target) e
 				// sidecar := formolv1alpha1.GetSidecar(backupConf, target)
 				_, vms := formolv1alpha1.GetVolumeMounts(container, targetContainer)
 				if err := r.snapshotVolumes(vms, targetPodSpec); err != nil {
-					r.Log.Error(err, "volume snapshot not ready")
-					return err
+					switch err.(type) {
+					case *NotReadyToUseError:
+						r.Log.V(0).Info("Some volumes are still not ready to use")
+					default:
+						r.Log.Error(err, "cannot snapshot the volumes")
+						return err
+					}
 				}
 
 			}
@@ -114,7 +119,7 @@ func (e *NotReadyToUseError) Error() string {
 	return "Snapshot is not ready to use"
 }
 
-func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) error {
+func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumesnapshotv1.VolumeSnapshot, error) {
 	r.Log.V(0).Info("Preparing snapshot", "volume", volume.Name)
 	if volume.VolumeSource.PersistentVolumeClaim != nil {
 		pvc := corev1.PersistentVolumeClaim{}
@@ -123,21 +128,21 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) error {
 			Name:      volume.VolumeSource.PersistentVolumeClaim.ClaimName,
 		}, &pvc); err != nil {
 			r.Log.Error(err, "unable to get pvc", "volume", volume)
-			return err
+			return nil, err
 		}
 		pv := corev1.PersistentVolume{}
 		if err := r.Get(r.Context, client.ObjectKey{
 			Name: pvc.Spec.VolumeName,
 		}, &pv); err != nil {
 			r.Log.Error(err, "unable to get pv", "volume", pvc.Spec.VolumeName)
-			return err
+			return nil, err
 		}
 		if pv.Spec.PersistentVolumeSource.CSI != nil {
 			// This volume is supported by a CSI driver. Let's see if we can snapshot it.
 			volumeSnapshotClassList := volumesnapshotv1.VolumeSnapshotClassList{}
 			if err := r.List(r.Context, &volumeSnapshotClassList); err != nil {
 				r.Log.Error(err, "unable to get VolumeSnapshotClass list")
-				return err
+				return nil, err
 			}
 			for _, volumeSnapshotClass := range volumeSnapshotClassList.Items {
 				if volumeSnapshotClass.Driver == pv.Spec.PersistentVolumeSource.CSI.Driver {
@@ -164,27 +169,31 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) error {
 						}
 						if err := r.Create(r.Context, &volumeSnapshot); err != nil {
 							r.Log.Error(err, "unable to create the snapshot", "pvc", pvc.Name)
-							return err
+							return nil, err
 						}
 						// We just created the snapshot. We have to assume it's not yet ready and reschedule
-						return &NotReadyToUseError{}
+						return nil, &NotReadyToUseError{}
 					} else {
 						if err != nil {
 							r.Log.Error(err, "Something went very wrong here")
-							return err
+							return nil, err
 						}
 						// The VolumeSnapshot exists. Is it ReadyToUse?
 						if volumeSnapshot.Status == nil || volumeSnapshot.Status.ReadyToUse == nil || *volumeSnapshot.Status.ReadyToUse == false {
 							r.Log.V(0).Info("Volume snapshot exists but it is not ready", "volume", volumeSnapshot.Name)
-							return &NotReadyToUseError{}
+							return nil, &NotReadyToUseError{}
 						}
 						r.Log.V(0).Info("Volume snapshot is ready to use", "volume", volumeSnapshot.Name)
+						return &volumeSnapshot, nil
 					}
 				}
 			}
 		}
 	}
-	return nil
+	return nil, nil
+}
+
+func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.VolumeSnapshot) {
 }
 
 func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podSpec *corev1.PodSpec) (err error) {
@@ -192,7 +201,8 @@ func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podS
 	for _, vm := range vms {
 		for _, volume := range podSpec.Volumes {
 			if vm.Name == volume.Name {
-				err = r.snapshotVolume(volume)
+				var vs *volumesnapshotv1.VolumeSnapshot
+				vs, err = r.snapshotVolume(volume)
 				if err != nil {
 					switch err.(type) {
 					case *NotReadyToUseError:
@@ -202,6 +212,9 @@ func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podS
 					default:
 						return
 					}
+				}
+				if vs != nil {
+					r.createVolumeFromSnapshot(vs)
 				}
 			}
 		}
