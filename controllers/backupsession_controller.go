@@ -115,6 +115,21 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				targetStatus.SnapshotId = backupResult.SnapshotId
 				targetStatus.Duration = &metav1.Duration{Duration: time.Now().Sub(targetStatus.StartTime.Time)}
 			}
+		case formolv1alpha1.SnapshotKind:
+			if err := r.backupSnapshot(target); err != nil {
+				switch err.(type) {
+				case *NotReadyToUseError:
+					r.Log.V(0).Info("Volume snapshots are not ready. Requeueing")
+					return ctrl.Result{
+						Requeue: true,
+					}, nil
+				default:
+					r.Log.Error(err, "unable to do snapshot backup")
+					// TODO: cleanup existing snapshots
+					r.deleteVolumeSnapshots(target)
+					newSessionState = formolv1alpha1.Failure
+				}
+			}
 		}
 		r.Log.V(0).Info("Backup is over and is a success. Move to Waiting state")
 	case formolv1alpha1.Finalize:
