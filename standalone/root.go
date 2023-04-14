@@ -22,6 +22,10 @@ import (
 	"time"
 )
 
+const (
+	BACKUPSESSION_PREFIX = "bs"
+)
+
 var (
 	session controllers.Session
 )
@@ -128,7 +132,7 @@ func CreateBackupSession(ref corev1.ObjectReference) {
 
 	backupSession := &formolv1alpha1.BackupSession{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.Join([]string{"backupsession", ref.Name, strconv.FormatInt(time.Now().Unix(), 10)}, "-"),
+			Name:      strings.Join([]string{BACKUPSESSION_PREFIX, ref.Name, strconv.FormatInt(time.Now().Unix(), 10)}, "-"),
 			Namespace: ref.Namespace,
 		},
 		Spec: formolv1alpha1.BackupSessionSpec{
