@@ -127,8 +127,6 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				default:
 					r.Log.Error(err, "unable to do snapshot backup")
 					// TODO: cleanup existing snapshots
-					r.deleteVolumeSnapshots(target)
-					newSessionState = formolv1alpha1.Failure
 				}
 			}
 		}

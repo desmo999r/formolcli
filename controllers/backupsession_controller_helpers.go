@@ -95,10 +95,9 @@ func (r *BackupSessionReconciler) backupSnapshot(target formolv1alpha1.Target) e
 				// sidecar := formolv1alpha1.GetSidecar(backupConf, target)
 				_, vms := formolv1alpha1.GetVolumeMounts(container, targetContainer)
 				if err := r.snapshotVolumes(vms, targetPodSpec); err != nil {
-					switch err.(type) {
-					case *NotReadyToUseError:
+					if IsNotReadyToUse(err) {
 						r.Log.V(0).Info("Some volumes are still not ready to use")
-					default:
+					} else {
 						r.Log.Error(err, "cannot snapshot the volumes")
 						return err
 					}
@@ -225,7 +224,7 @@ func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.
 			Spec: corev1.PersistentVolumeClaimSpec{
 				StorageClassName: &pv.Spec.StorageClassName,
 				//AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
-				AccessModes:      pv.Spec.AccessModes,
+				AccessModes: pv.Spec.AccessModes,
 				DataSource: &corev1.TypedLocalObjectReference{
 					APIGroup: func() *string { s := "snapshot.storage.k8s.io"; return &s }(),
 					Kind:     "VolumeSnapshot",
@@ -264,11 +263,11 @@ func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podS
 					backupPVCName, err := r.createVolumeFromSnapshot(vs)
 					if err != nil {
 						r.Log.Error(err, "unable to create volume from snapshot", "vs", vs)
-						return
+						return err
 					}
 					podSpec.Volumes[i].VolumeSource.PersistentVolumeClaim = &corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: backupPVCName,
-						ReadOnly: true,
+						ReadOnly:  true,
 					}
 					// The snapshot and the volume will be deleted by the Job when the backup is over
 				}
@@ -276,8 +275,4 @@ func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podS
 		}
 	}
 	return
-}
-
-func (r *BackupSessionReconciler) deleteVolumeSnapshots(target formolv1alpha1.Target) error {
-	return nil
 }
