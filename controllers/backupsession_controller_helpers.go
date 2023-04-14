@@ -12,10 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	SNAPSHOT_PREFIX = "formol-"
+	"strings"
 )
 
 type BackupResult struct {
@@ -119,6 +116,15 @@ func (e *NotReadyToUseError) Error() string {
 	return "Snapshot is not ready to use"
 }
 
+func IsNotReadyToUse(err error) bool {
+	switch err.(type) {
+	case *NotReadyToUseError:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumesnapshotv1.VolumeSnapshot, error) {
 	r.Log.V(0).Info("Preparing snapshot", "volume", volume.Name)
 	if volume.VolumeSource.PersistentVolumeClaim != nil {
@@ -148,9 +154,11 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumes
 				if volumeSnapshotClass.Driver == pv.Spec.PersistentVolumeSource.CSI.Driver {
 					// Check if a snapshot exist
 					volumeSnapshot := volumesnapshotv1.VolumeSnapshot{}
+					volumeSnapshotName := strings.Join([]string{"vs", r.Name, pv.Name}, "-")
+
 					if err := r.Get(r.Context, client.ObjectKey{
 						Namespace: r.Namespace,
-						Name:      SNAPSHOT_PREFIX + pv.Name,
+						Name:      volumeSnapshotName,
 					}, &volumeSnapshot); errors.IsNotFound(err) {
 						// No snapshot found. Create a new one.
 						// We want to snapshot using this VolumeSnapshotClass
@@ -158,7 +166,7 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumes
 						volumeSnapshot = volumesnapshotv1.VolumeSnapshot{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace: r.Namespace,
-								Name:      SNAPSHOT_PREFIX + pv.Name,
+								Name:      volumeSnapshotName,
 							},
 							Spec: volumesnapshotv1.VolumeSnapshotSpec{
 								VolumeSnapshotClassName: &volumeSnapshotClass.Name,
@@ -193,28 +201,76 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumes
 	return nil, nil
 }
 
-func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.VolumeSnapshot) {
+func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.VolumeSnapshot) (backupPVCName string, err error) {
+	backupPVCName = strings.Replace(vs.Name, "vs", "bak", 1)
+	backupPVC := corev1.PersistentVolumeClaim{}
+	if err = r.Get(r.Context, client.ObjectKey{
+		Namespace: r.Namespace,
+		Name:      backupPVCName,
+	}, &backupPVC); errors.IsNotFound(err) {
+		// The Volume does not exist. Create it.
+		pv := corev1.PersistentVolume{}
+		pvName, _ := strings.CutPrefix(vs.Name, strings.Join([]string{"vs", r.Name}, "-"))
+		if err = r.Get(r.Context, client.ObjectKey{
+			Name: pvName,
+		}, &pv); err != nil {
+			r.Log.Error(err, "unable to find pv", "pv", pvName)
+			return
+		}
+		backupPVC = corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: r.Namespace,
+				Name:      backupPVCName,
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: &pv.Spec.StorageClassName,
+				//AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
+				AccessModes:      pv.Spec.AccessModes,
+				DataSource: &corev1.TypedLocalObjectReference{
+					APIGroup: func() *string { s := "snapshot.storage.k8s.io"; return &s }(),
+					Kind:     "VolumeSnapshot",
+					Name:     vs.Name,
+				},
+			},
+		}
+		if err = r.Create(r.Context, &backupPVC); err != nil {
+			r.Log.Error(err, "unable to create backup PVC", "backupPVC", backupPVC)
+			return
+		}
+	}
+	if err != nil {
+		r.Log.Error(err, "something went very wrong here")
+	}
+	return
 }
 
 func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podSpec *corev1.PodSpec) (err error) {
 	// We snapshot/check all the volumes. If at least one of the snapshot is not ready to use. We reschedule.
 	for _, vm := range vms {
-		for _, volume := range podSpec.Volumes {
+		for i, volume := range podSpec.Volumes {
 			if vm.Name == volume.Name {
 				var vs *volumesnapshotv1.VolumeSnapshot
 				vs, err = r.snapshotVolume(volume)
+				if IsNotReadyToUse(err) {
+					defer func() {
+						err = &NotReadyToUseError{}
+					}()
+					continue
+				}
 				if err != nil {
-					switch err.(type) {
-					case *NotReadyToUseError:
-						defer func() {
-							err = &NotReadyToUseError{}
-						}()
-					default:
-						return
-					}
+					return
 				}
 				if vs != nil {
-					r.createVolumeFromSnapshot(vs)
+					backupPVCName, err := r.createVolumeFromSnapshot(vs)
+					if err != nil {
+						r.Log.Error(err, "unable to create volume from snapshot", "vs", vs)
+						return
+					}
+					podSpec.Volumes[i].VolumeSource.PersistentVolumeClaim = &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: backupPVCName,
+						ReadOnly: true,
+					}
+					// The snapshot and the volume will be deleted by the Job when the backup is over
 				}
 			}
 		}
