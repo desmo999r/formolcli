@@ -27,6 +27,7 @@ type Session struct {
 	Scheme *runtime.Scheme
 	context.Context
 	Namespace string
+	Name      string
 }
 
 const (

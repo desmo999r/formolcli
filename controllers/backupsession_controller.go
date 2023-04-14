@@ -21,6 +21,8 @@ type BackupSessionReconciler struct {
 func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = log.FromContext(ctx)
 	r.Context = ctx
+	r.Namespace = req.NamespacedName.Namespace
+	r.Name = req.NamespacedName.Name
 
 	backupSession := formolv1alpha1.BackupSession{}
 	err := r.Get(ctx, req.NamespacedName, &backupSession)
@@ -47,7 +49,6 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, err
 	}
-	r.Namespace = backupConf.Namespace
 
 	// we don't want a copy because we will modify and update it.
 	var target formolv1alpha1.Target
@@ -96,7 +97,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		newSessionState = formolv1alpha1.Waiting
 		switch target.BackupType {
 		case formolv1alpha1.JobKind:
-			if backupResult, err := r.backupJob(backupSession.Name, target); err != nil {
+			if backupResult, err := r.backupJob(target); err != nil {
 				r.Log.Error(err, "unable to run backup job", "target", targetName)
 				newSessionState = formolv1alpha1.Failure
 			} else {
@@ -106,7 +107,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		case formolv1alpha1.OnlineKind:
 			backupPaths := strings.Split(os.Getenv(formolv1alpha1.BACKUP_PATHS), string(os.PathListSeparator))
-			if backupResult, result := r.backupPaths(backupSession.Name, backupPaths); result != nil {
+			if backupResult, result := r.backupPaths(backupPaths); result != nil {
 				r.Log.Error(result, "unable to backup paths", "target name", targetName, "paths", backupPaths)
 				newSessionState = formolv1alpha1.Failure
 			} else {

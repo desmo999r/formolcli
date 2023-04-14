@@ -23,13 +23,13 @@ type BackupResult struct {
 	Duration   float64
 }
 
-func (r *BackupSessionReconciler) backupPaths(tag string, paths []string) (result BackupResult, err error) {
+func (r *BackupSessionReconciler) backupPaths(paths []string) (result BackupResult, err error) {
 	if err = r.CheckRepo(); err != nil {
 		r.Log.Error(err, "unable to setup repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
 		return
 	}
 	r.Log.V(0).Info("backing up paths", "paths", paths)
-	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", tag}, paths...)...)
+	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", r.Name}, paths...)...)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	_ = cmd.Start()
@@ -55,7 +55,7 @@ func (r *BackupSessionReconciler) backupPaths(tag string, paths []string) (resul
 	return
 }
 
-func (r *BackupSessionReconciler) backupJob(tag string, target formolv1alpha1.Target) (result BackupResult, err error) {
+func (r *BackupSessionReconciler) backupJob(target formolv1alpha1.Target) (result BackupResult, err error) {
 	paths := []string{}
 	for _, container := range target.Containers {
 		for _, job := range container.Job {
@@ -75,7 +75,7 @@ func (r *BackupSessionReconciler) backupJob(tag string, target formolv1alpha1.Ta
 			paths = append(paths, container.SharePath)
 		}
 	}
-	result, err = r.backupPaths(tag, paths)
+	result, err = r.backupPaths(paths)
 	return
 }
 

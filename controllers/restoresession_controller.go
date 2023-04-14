@@ -19,6 +19,8 @@ type RestoreSessionReconciler struct {
 func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = log.FromContext(ctx)
 	r.Context = ctx
+	r.Namespace = req.NamespacedName.Namespace
+	r.Name = req.NamespacedName.Name
 
 	restoreSession := formolv1alpha1.RestoreSession{}
 	err := r.Get(r.Context, req.NamespacedName, &restoreSession)
@@ -49,7 +51,6 @@ func (r *RestoreSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, err
 	}
-	r.Namespace = backupConf.Namespace
 	r.backupConf = backupConf
 
 	// we don't want a copy because we will modify and update it.
