@@ -4,10 +4,12 @@ import (
 	"context"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/desmo999r/formolcli/controllers"
+	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -44,13 +46,74 @@ func init() {
 		}
 	}
 	session.Scheme = runtime.NewScheme()
-	_ = formolv1alpha1.AddToScheme(session.Scheme)
-	_ = clientgoscheme.AddToScheme(session.Scheme)
+	utilruntime.Must(formolv1alpha1.AddToScheme(session.Scheme))
+	utilruntime.Must(volumesnapshotv1.AddToScheme(session.Scheme))
+	utilruntime.Must(clientgoscheme.AddToScheme(session.Scheme))
 	session.Client, err = client.New(config, client.Options{Scheme: session.Scheme})
 	if err != nil {
 		log.Error(err, "unable to get client")
 		os.Exit(1)
 	}
+}
+
+func BackupPaths(
+	backupSessionName string,
+	backupSessionNamespace string,
+	targetName string,
+	paths ...string) error {
+	log := session.Log.WithName("BackupPaths")
+	backupResult, err := session.BackupPaths(paths)
+	log.V(0).Info("Backup Job is over", "target", targetName, "snapshotID", backupResult.SnapshotId, "duration", backupResult.Duration)
+	if err != nil {
+		log.Error(err, "unable to backup paths", "paths", paths)
+		return err
+	}
+	backupSession := formolv1alpha1.BackupSession{}
+	if err := session.Get(session.Context, client.ObjectKey{
+		Name:      backupSessionName,
+		Namespace: backupSessionNamespace,
+	}, &backupSession); err != nil {
+		log.Error(err, "unable to get backupsession", "name", backupSessionName, "namespace", backupSessionNamespace)
+		return err
+	}
+	for i, target := range backupSession.Status.Targets {
+		if target.TargetName == targetName {
+			backupSession.Status.Targets[i].SessionState = formolv1alpha1.Success
+			backupSession.Status.Targets[i].SnapshotId = backupResult.SnapshotId
+			backupSession.Status.Targets[i].Duration = &metav1.Duration{Duration: time.Now().Sub(backupSession.Status.Targets[i].StartTime.Time)}
+			if err := session.Status().Update(session.Context, &backupSession); err != nil {
+				log.Error(err, "unable to update backupSession status")
+				return err
+			}
+		}
+	}
+	// Now find the PVC, VolumeSnapshots with the right label backupsession
+	// and delete them
+	vss := volumesnapshotv1.VolumeSnapshotList{}
+	if err := session.List(session.Context, &vss, client.InNamespace(backupSessionNamespace), client.MatchingLabels{"backupsession": backupSessionName}); err != nil {
+		log.Error(err, "unable to list the volumesnapshots", "backupsession", backupSessionName)
+		return err
+	}
+	for _, vs := range vss.Items {
+		if err := session.Delete(session.Context, &vs); err != nil {
+			log.Error(err, "unable to delete volumesnapshot", "vs", vs.Name)
+			return err
+		}
+		log.V(0).Info("volumesnapshot deleted", "vs", vs.Name)
+	}
+	pvcs := corev1.PersistentVolumeClaimList{}
+	if err := session.List(session.Context, &pvcs, client.InNamespace(backupSessionNamespace), client.MatchingLabels{"backupsession": backupSessionName}); err != nil {
+		log.Error(err, "unable to list the PVCs", "backupsession", backupSessionName)
+		return err
+	}
+	for _, pvc := range pvcs.Items {
+		if err := session.Delete(session.Context, &pvc); err != nil {
+			log.Error(err, "unable to delete PVC", "pvc", pvc.Name)
+			return err
+		}
+		log.V(0).Info("PVC deleted", "pvc", pvc.Name)
+	}
+	return nil
 }
 
 func StartRestore(

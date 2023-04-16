@@ -26,6 +26,17 @@ var createBackupSessionCmd = &cobra.Command{
 	},
 }
 
+var backupCmd = &cobra.Command{
+	Use:   "backup",
+	Short: "Backup paths",
+	Run: func(cmd *cobra.Command, args []string) {
+		backupSessionName, _ := cmd.Flags().GetString("name")
+		backupSessionNamespace, _ := cmd.Flags().GetString("namespace")
+		targetName, _ := cmd.Flags().GetString("target-name")
+		standalone.BackupPaths(backupSessionName, backupSessionNamespace, targetName, args...)
+	},
+}
+
 var startRestoreSessionCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Restore a restic snapshot",
@@ -101,6 +112,7 @@ func init() {
 	rootCmd.AddCommand(restoreSessionCmd)
 	rootCmd.AddCommand(snapshotCmd)
 	backupSessionCmd.AddCommand(createBackupSessionCmd)
+	backupSessionCmd.AddCommand(backupCmd)
 	restoreSessionCmd.AddCommand(startRestoreSessionCmd)
 	snapshotCmd.AddCommand(deleteSnapshotCmd)
 	rootCmd.AddCommand(startServerCmd)
@@ -108,6 +120,12 @@ func init() {
 	createBackupSessionCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
 	createBackupSessionCmd.MarkFlagRequired("namespace")
 	createBackupSessionCmd.MarkFlagRequired("name")
+	backupCmd.Flags().String("target-name", "", "The name of target being restored")
+	backupCmd.Flags().String("namespace", "", "The namespace of the BackupConfiguration containing the information about the backup.")
+	backupCmd.Flags().String("name", "", "The name of the BackupConfiguration containing the information about the backup.")
+	backupCmd.MarkFlagRequired("namespace")
+	backupCmd.MarkFlagRequired("name")
+	backupCmd.MarkFlagRequired("target-name")
 	startRestoreSessionCmd.Flags().String("namespace", "", "The namespace of RestoreSession")
 	startRestoreSessionCmd.Flags().String("name", "", "The name of RestoreSession")
 	startRestoreSessionCmd.Flags().String("target-name", "", "The name of target being restored")

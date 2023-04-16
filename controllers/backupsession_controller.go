@@ -16,6 +16,8 @@ import (
 
 type BackupSessionReconciler struct {
 	Session
+	backupSession formolv1alpha1.BackupSession
+	backupConf    formolv1alpha1.BackupConfiguration
 }
 
 func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -32,6 +34,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, err
 	}
+	r.backupSession = backupSession
 	if len(backupSession.Status.Targets) == 0 {
 		// The main BackupSession controller hasn't assigned a backup task yet
 		// Wait a bit
@@ -49,6 +52,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, err
 	}
+	r.backupConf = backupConf
 
 	// we don't want a copy because we will modify and update it.
 	var target formolv1alpha1.Target
@@ -107,7 +111,7 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		case formolv1alpha1.OnlineKind:
 			backupPaths := strings.Split(os.Getenv(formolv1alpha1.BACKUP_PATHS), string(os.PathListSeparator))
-			if backupResult, result := r.backupPaths(backupPaths); result != nil {
+			if backupResult, result := r.BackupPaths(backupPaths); result != nil {
 				r.Log.Error(result, "unable to backup paths", "target name", targetName, "paths", backupPaths)
 				newSessionState = formolv1alpha1.Failure
 			} else {
@@ -118,15 +122,14 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		case formolv1alpha1.SnapshotKind:
 			if err := r.backupSnapshot(target); err != nil {
-				switch err.(type) {
-				case *NotReadyToUseError:
+				if IsNotReadyToUse(err) {
 					r.Log.V(0).Info("Volume snapshots are not ready. Requeueing")
 					return ctrl.Result{
 						Requeue: true,
 					}, nil
-				default:
+				} else {
 					r.Log.Error(err, "unable to do snapshot backup")
-					// TODO: cleanup existing snapshots
+					return ctrl.Result{}, err
 				}
 			}
 		}
@@ -138,10 +141,15 @@ func (r *BackupSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if result = r.runFinalizeSteps(target); result != nil {
 			r.Log.Error(err, "unable to run finalize steps")
 		}
-		if targetStatus.SnapshotId == "" {
-			newSessionState = formolv1alpha1.Failure
+		if target.BackupType == formolv1alpha1.SnapshotKind {
+			// SnapshotKind special state where we wait for the backup Job to finish
+			newSessionState = formolv1alpha1.WaitingForJob
 		} else {
-			newSessionState = formolv1alpha1.Success
+			if targetStatus.SnapshotId == "" {
+				newSessionState = formolv1alpha1.Failure
+			} else {
+				newSessionState = formolv1alpha1.Success
+			}
 		}
 	case formolv1alpha1.Success:
 		// Target backup is a success

@@ -1,56 +1,20 @@
 package controllers
 
 import (
-	"bufio"
-	"encoding/json"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	volumesnapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	"io"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
-	"os/exec"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 )
 
-type BackupResult struct {
-	SnapshotId string
-	Duration   float64
-}
-
-func (r *BackupSessionReconciler) backupPaths(paths []string) (result BackupResult, err error) {
-	if err = r.CheckRepo(); err != nil {
-		r.Log.Error(err, "unable to setup repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
-		return
-	}
-	r.Log.V(0).Info("backing up paths", "paths", paths)
-	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", r.Name}, paths...)...)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	_ = cmd.Start()
-
-	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
-	scanner.Split(bufio.ScanLines)
-	var data map[string]interface{}
-	for scanner.Scan() {
-		if err := json.Unmarshal(scanner.Bytes(), &data); err != nil {
-			r.Log.Error(err, "unable to unmarshal json", "data", scanner.Text())
-			continue
-		}
-		switch data["message_type"].(string) {
-		case "summary":
-			result.SnapshotId = data["snapshot_id"].(string)
-			result.Duration = data["total_duration"].(float64)
-		case "status":
-			r.Log.V(0).Info("backup running", "percent done", data["percent_done"].(float64))
-		}
-	}
-
-	err = cmd.Wait()
-	return
-}
+const (
+	JOBTTL int32 = 7200
+)
 
 func (r *BackupSessionReconciler) backupJob(target formolv1alpha1.Target) (result BackupResult, err error) {
 	paths := []string{}
@@ -72,11 +36,11 @@ func (r *BackupSessionReconciler) backupJob(target formolv1alpha1.Target) (resul
 			paths = append(paths, container.SharePath)
 		}
 	}
-	result, err = r.backupPaths(paths)
+	result, err = r.BackupPaths(paths)
 	return
 }
 
-func (r *BackupSessionReconciler) backupSnapshot(target formolv1alpha1.Target) error {
+func (r *BackupSessionReconciler) backupSnapshot(target formolv1alpha1.Target) (e error) {
 	targetObject, targetPodSpec := formolv1alpha1.GetTargetObjects(target.TargetKind)
 	if err := r.Get(r.Context, client.ObjectKey{
 		Namespace: r.Namespace,
@@ -93,16 +57,54 @@ func (r *BackupSessionReconciler) backupSnapshot(target formolv1alpha1.Target) e
 				// replace the volumes in the container struct with the snapshot volumes
 				// use formolv1alpha1.GetVolumeMounts to get the volume mounts for the Job
 				// sidecar := formolv1alpha1.GetSidecar(backupConf, target)
-				_, vms := formolv1alpha1.GetVolumeMounts(container, targetContainer)
+				paths, vms := formolv1alpha1.GetVolumeMounts(container, targetContainer)
 				if err := r.snapshotVolumes(vms, targetPodSpec); err != nil {
 					if IsNotReadyToUse(err) {
 						r.Log.V(0).Info("Some volumes are still not ready to use")
+						defer func() { e = &NotReadyToUseError{} }()
 					} else {
 						r.Log.Error(err, "cannot snapshot the volumes")
 						return err
 					}
+				} else {
+					r.Log.V(1).Info("Creating a Job to backup the Snapshot volumes")
+					sidecar := formolv1alpha1.GetSidecar(r.backupConf, target)
+					sidecar.Args = append([]string{"backupsession", "backup", "--namespace", r.Namespace, "--name", r.Name, "--target-name", target.TargetName}, paths...)
+					sidecar.VolumeMounts = vms
+					if env, err := r.getResticEnv(r.backupConf); err != nil {
+						r.Log.Error(err, "unable to get restic env")
+						return err
+					} else {
+						sidecar.Env = append(sidecar.Env, env...)
+					}
+					sidecar.Env = append(sidecar.Env, corev1.EnvVar{
+						Name:  formolv1alpha1.BACKUP_PATHS,
+						Value: strings.Join(paths, string(os.PathListSeparator)),
+					})
+					job := batchv1.Job{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: r.Namespace,
+							Name:      "backupsnapshot-" + r.Name,
+						},
+						Spec: batchv1.JobSpec{
+							TTLSecondsAfterFinished: func() *int32 { ttl := JOBTTL; return &ttl }(),
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Volumes: targetPodSpec.Volumes,
+									Containers: []corev1.Container{
+										sidecar,
+									},
+									RestartPolicy: corev1.RestartPolicyNever,
+								},
+							},
+						},
+					}
+					if err := r.Create(r.Context, &job); err != nil {
+						r.Log.Error(err, "unable to create the snapshot volumes backup job", "job", job, "container", sidecar)
+						return err
+					}
+					r.Log.V(1).Info("snapshot volumes backup job created", "job", job.Name)
 				}
-
 			}
 		}
 	}
@@ -166,6 +168,9 @@ func (r *BackupSessionReconciler) snapshotVolume(volume corev1.Volume) (*volumes
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace: r.Namespace,
 								Name:      volumeSnapshotName,
+								Labels: map[string]string{
+									"backupsession": r.Name,
+								},
 							},
 							Spec: volumesnapshotv1.VolumeSnapshotSpec{
 								VolumeSnapshotClassName: &volumeSnapshotClass.Name,
@@ -210,6 +215,7 @@ func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.
 		// The Volume does not exist. Create it.
 		pv := corev1.PersistentVolume{}
 		pvName, _ := strings.CutPrefix(vs.Name, strings.Join([]string{"vs", r.Name}, "-"))
+		pvName = pvName[1:]
 		if err = r.Get(r.Context, client.ObjectKey{
 			Name: pvName,
 		}, &pv); err != nil {
@@ -220,11 +226,17 @@ func (r *BackupSessionReconciler) createVolumeFromSnapshot(vs *volumesnapshotv1.
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: r.Namespace,
 				Name:      backupPVCName,
+				Labels: map[string]string{
+					"backupsession": r.Name,
+				},
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
 				StorageClassName: &pv.Spec.StorageClassName,
 				//AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
 				AccessModes: pv.Spec.AccessModes,
+				Resources: corev1.ResourceRequirements{
+					Requests: pv.Spec.Capacity,
+				},
 				DataSource: &corev1.TypedLocalObjectReference{
 					APIGroup: func() *string { s := "snapshot.storage.k8s.io"; return &s }(),
 					Kind:     "VolumeSnapshot",
@@ -260,6 +272,7 @@ func (r *BackupSessionReconciler) snapshotVolumes(vms []corev1.VolumeMount, podS
 					return
 				}
 				if vs != nil {
+					// The snapshot is ready. We create a PVC from it.
 					backupPVCName, err := r.createVolumeFromSnapshot(vs)
 					if err != nil {
 						r.Log.Error(err, "unable to create volume from snapshot", "vs", vs)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	formolv1alpha1 "github.com/desmo999r/formol/api/v1alpha1"
 	"github.com/go-logr/logr"
@@ -23,11 +24,16 @@ import (
 
 type Session struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
 	context.Context
+	Log       logr.Logger
+	Scheme    *runtime.Scheme
 	Namespace string
 	Name      string
+}
+
+type BackupResult struct {
+	SnapshotId string
+	Duration   float64
 }
 
 const (
@@ -40,7 +46,7 @@ func (s Session) getResticEnv(backupConf formolv1alpha1.BackupConfiguration) (en
 		Namespace: backupConf.Namespace,
 		Name:      backupConf.Spec.Repository,
 	}, &repo); err != nil {
-		s.Log.Error(err, "unable to get repo")
+		s.Log.Error(err, "unable to get repo", "backupconf", backupConf)
 		return
 	}
 	if repo.Spec.Backend.S3 != nil {
@@ -92,6 +98,38 @@ func (s Session) CheckRepo() error {
 		}
 	}
 	return err
+}
+
+func (s Session) BackupPaths(paths []string) (result BackupResult, err error) {
+	if err = s.CheckRepo(); err != nil {
+		s.Log.Error(err, "unable to setup repo", "repo", os.Getenv(formolv1alpha1.RESTIC_REPOSITORY))
+		return
+	}
+	s.Log.V(0).Info("backing up paths", "paths", paths)
+	cmd := exec.Command(RESTIC_EXEC, append([]string{"backup", "--json", "--tag", s.Name}, paths...)...)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	_ = cmd.Start()
+
+	scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
+	scanner.Split(bufio.ScanLines)
+	var data map[string]interface{}
+	for scanner.Scan() {
+		if err := json.Unmarshal(scanner.Bytes(), &data); err != nil {
+			s.Log.Error(err, "unable to unmarshal json", "data", scanner.Text())
+			continue
+		}
+		switch data["message_type"].(string) {
+		case "summary":
+			result.SnapshotId = data["snapshot_id"].(string)
+			result.Duration = data["total_duration"].(float64)
+		case "status":
+			s.Log.V(0).Info("backup running", "percent done", data["percent_done"].(float64))
+		}
+	}
+
+	err = cmd.Wait()
+	return
 }
 
 func (s Session) getSecretData(name string) map[string][]byte {
