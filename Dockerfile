@@ -1,8 +1,9 @@
 # Build a small image
-FROM golang:alpine3.17 AS builder
+FROM --platform=$BUILDPLATFORM golang:alpine3.17 AS builder
 
 WORKDIR /go/src
 COPY . .
+ARG TARGETOS TARGETARCH
 RUN GO111MODULE=on CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o bin/formolcli main.go
 
 FROM alpine:3.17

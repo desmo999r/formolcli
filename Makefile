@@ -2,7 +2,7 @@ GOARCH ?= amd64
 GOOS ?= linux
 VERSION ?= latest
 IMG ?= docker.io/desmo999r/formolcli:$(VERSION)
-MANIFEST = formol-multiarch
+MANIFEST = formolcli-multiarch
 BINDIR = ./bin
 
 .PHONY: formolcli
@@ -32,6 +32,10 @@ docker-build-arm64: docker-build
 .PHONY: docker-push
 docker-push: 
 	buildah manifest push --all --rm $(MANIFEST) "docker://$(IMG)"
+
+.PHONY: docker-build-multiarch
+docker-build-multiarch: 
+	buildah bud --manifest $(MANIFEST) --platform linux/amd64,linux/arm64/v8 .
 
 .PHONY: all
 all: formolcli docker-build
