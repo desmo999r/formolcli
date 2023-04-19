@@ -1,8 +1,0 @@
-# Build a small image
-FROM --platform=linux/amd64 alpine:3
-RUN apk add --no-cache su-exec restic
-COPY ./bin/formolcli /usr/local/bin
-
-# Command to run
-ENTRYPOINT ["/usr/local/bin/formolcli"]
-CMD ["--help"]
