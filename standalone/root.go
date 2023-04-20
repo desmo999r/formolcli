@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -183,15 +182,6 @@ func StartRestore(
 func CreateBackupSession(ref corev1.ObjectReference) {
 	log := session.Log.WithName("CreateBackupSession")
 	log.V(0).Info("CreateBackupSession called")
-	backupConf := formolv1alpha1.BackupConfiguration{}
-	if err := session.Get(session.Context, types.NamespacedName{
-		Namespace: ref.Namespace,
-		Name:      ref.Name,
-	}, &backupConf); err != nil {
-		log.Error(err, "unable to get backupconf")
-		os.Exit(1)
-	}
-	log.V(0).Info("got backupConf", "backupConf", backupConf)
 
 	backupSession := &formolv1alpha1.BackupSession{
 		ObjectMeta: metav1.ObjectMeta{
