@@ -20,15 +20,11 @@ vet:
 
 .PHONY: docker-build-multiarch
 docker-build-multiarch:
-	buildah bud --manifest $(MANIFEST) --platform=$(PLATFORMS) .
+	buildah bud --manifest $(MANIFEST) --platform=$(PLATFORMS) --layers .
 
 .PHONY: docker-push
 docker-push: 
 	buildah manifest push --all --rm $(MANIFEST) "docker://$(IMG)"
-
-.PHONY: docker-build-multiarch
-docker-build-multiarch: 
-	buildah bud --manifest $(MANIFEST) --platform linux/amd64,linux/arm64/v8 .
 
 .PHONY: all
 all: formolcli docker-build

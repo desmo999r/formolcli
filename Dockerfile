@@ -1,5 +1,5 @@
 # Build a small image
-FROM --platform=${BUILDPLATFORM} golang:alpine3 AS builder
+FROM --platform=${BUILDPLATFORM} golang:alpine3.17 AS builder
 ARG TARGETOS
 ARG TARGETARCH 
 ARG TARGETPLATFORM
