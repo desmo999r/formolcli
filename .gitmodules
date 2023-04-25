@@ -1,0 +1,3 @@
+[submodule "formol"]
+	path = formol
+	url = git@github.com:desmo999r/formol.git
